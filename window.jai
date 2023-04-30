@@ -39,6 +39,8 @@ poll_window_events :: (window : *ReactorWindow){
 
   for events_this_frame {
     if it.type == .QUIT then window.quit = true;
+    if it.type == .KEYBOARD && it.key_code == .ESCAPE then window.quit = true;
+
     print("%\n", it);
   }
 }

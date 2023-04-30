@@ -6,11 +6,17 @@ ShaderManager :: #import,file "shader_manager.jai";
 
 DEBUG :: true;
 
-
 validation_layers_enabled := false;
 validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
 
 debug_messenger : VkDebugUtilsMessengerEXT;
+
+// Devices
+physical_device : VkPhysicalDevice = VK_NULL_HANDLE; // Our seelcted GFX Card
+logical_device : VkDevice = VK_NULL_HANDLE;
+
+// Queue which we can enqueueu commands to and then submit to our device.
+graphics_queue : VkQueue;
 
 main :: () {
   window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
@@ -18,6 +24,10 @@ main :: () {
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
   print("Initialized Vulkan:%\n", success);
+
+  physical_device = pick_physical_device(vk_instance);
+
+  create_logical_device(vk_instance, physical_device, logical_device);
 
   vert_success, vert_id := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
   frag_success, frag_id := ShaderManager.load_shader("./res/shaders/simple_shader.frag.spv");
@@ -48,6 +58,9 @@ main :: () {
 }
 
 cleanup :: (instance : VkInstance) {
+
+  // Destroy our Logical Device.
+  vkDestroyDevice(logical_device, null);
 
   if validation_layers_enabled {
     // Cleanup our debug messenger.
@@ -91,22 +104,18 @@ init_vulkan :: () -> bool, VkInstance {
     // @ToDo: Non-Windows version
     extensions[1] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data;
   } else {
-    #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These are the debug extensions.
+    extensions: [..] *u8;
 
-      extensions: [..] *u8;
+    #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These are the debug extensions.
       array_add(*extensions , VK_KHR_SURFACE_EXTENSION_NAME.data);
       array_add(*extensions , VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data);
       array_add(*extensions , VK_EXT_DEBUG_REPORT_EXTENSION_NAME.data);
-
-      if validation_layers_enabled {
-        array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-      }
-
-    } else {
-      extensions: [0] *u8;
-      // @ToDo: Non-Windows version
-      #assert(false);
     }
+
+    if validation_layers_enabled {
+      array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
   }
 
 
@@ -135,7 +144,7 @@ init_vulkan :: () -> bool, VkInstance {
   if !vulkan_initialized then return false, null;
 
   // Print the available extentions
-  print_available_vulkan_extensions();
+  // print_available_vulkan_extensions();
 
   // Setup our debug messenger
   if validation_layers_enabled {
@@ -153,6 +162,122 @@ init_vulkan :: () -> bool, VkInstance {
   return vulkan_initialized, instance;
 }
 
+// Physical Devices
+//TODO come back to this, persist a list of all physical devices and allow a user to choose?
+pick_physical_device :: (vk_instance : VkInstance) -> VkPhysicalDevice{
+  
+  // Ask Vulkan how manyu GPU's it can see
+  device_count : u32 = 0;
+  vkEnumeratePhysicalDevices(vk_instance, *device_count, null);
+  if device_count == 0 { print("failed to find GPUs with Vulkan support!\n"); return VK_NULL_HANDLE; }
+
+  device_array := NewArray(device_count, VkPhysicalDevice);
+  defer free(device_array.data);
+  vkEnumeratePhysicalDevices(vk_instance, *device_count, device_array.data);
+
+  suitable_devices : [..] VkPhysicalDevice;
+
+  for device_array {
+    if is_device_suitable(it) {
+      array_add(*suitable_devices, it);
+    }
+  }
+
+  if suitable_devices.count == 0 {
+    print("No available devices meet this application's requirements.\n");
+    return VK_NULL_HANDLE;
+  }
+
+  return suitable_devices[0];
+
+}
+
+is_device_suitable :: ( device : VkPhysicalDevice ) -> bool {
+  indices := find_queue_famlilies(device);
+
+  if indices.has_value {
+    device_properties : VkPhysicalDeviceProperties;
+    device_features   : VkPhysicalDeviceFeatures;
+
+    vkGetPhysicalDeviceProperties(device, *device_properties);
+    vkGetPhysicalDeviceFeatures(device, *device_features);
+
+    // print("properties:%\nfeatures:%\n", device_properties, device_features);
+    print("%\n", to_string(device_properties.deviceName));
+  }
+
+  return indices.has_value;
+
+  // return device_properties.deviceType == .VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && device_features.geometryShader;
+}
+
+QueueFamilyIndices :: struct {
+  graphics_family : u32;
+  has_value := false;
+}
+
+find_queue_famlilies :: (device : VkPhysicalDevice) -> QueueFamilyIndices {
+  // Get Queue families
+  queue_family_count : u32 = 0;
+
+  vkGetPhysicalDeviceQueueFamilyProperties(device, *queue_family_count, null);
+  queue_family_array := NewArray(queue_family_count , VkQueueFamilyProperties);
+  defer free(queue_family_array.data);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, *queue_family_count, queue_family_array.data);
+
+  // Create a deafult struct instance to hold our indices.
+  indices : QueueFamilyIndices = .{};
+
+  // We are looking for a queue familiy which supports "GRAPHICS"
+  for it, index : queue_family_array {
+    if it.queueFlags & .VK_QUEUE_GRAPHICS_BIT {
+      indices.graphics_family = xx index;
+      indices.has_value = true;
+      break;
+    }
+  }
+
+  return indices;
+}
+
+// Logical Devices
+create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDevice, logical_device : VkDevice) {
+  indices := find_queue_famlilies(physical_device);
+
+  queue_create_info : VkDeviceQueueCreateInfo;
+  queue_create_info.sType = .VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queue_create_info.queueFamilyIndex = indices.graphics_family;
+  queue_create_info.queueCount = 1;
+
+  queue_priority : float = 1.0;
+  queue_create_info.pQueuePriorities = *queue_priority;
+
+  // Features of the Physical Device we are interested in Using.
+  device_features : VkPhysicalDeviceFeatures = .{};
+
+  create_info : VkDeviceCreateInfo = .{};
+  create_info.sType = .VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  create_info.pQueueCreateInfos = *queue_create_info; // Link to above^
+  create_info.queueCreateInfoCount = 1;
+
+  create_info.pEnabledFeatures = *device_features;
+
+  create_info.enabledExtensionCount = 0;
+  if validation_layers_enabled {
+    create_info.enabledLayerCount = cast(u32) validation_layers.count;
+    create_info.ppEnabledLayerNames = validation_layers.data;
+  } else {
+    create_info.enabledLayerCount = 0;
+  }
+
+  if vkCreateDevice(physical_device, *create_info, null, *logical_device) != .VK_SUCCESS {
+    print("failed to create logical device!\n");
+  }
+
+  vkGetDeviceQueue(logical_device, indices.graphics_family, 0, *graphics_queue);
+
+}
+
 populate_debug_messenger_create_info :: (p_create_info : *VkDebugUtilsMessengerCreateInfoEXT) {
   p_create_info.sType = .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
   p_create_info.messageSeverity = .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
@@ -164,7 +289,9 @@ populate_debug_messenger_create_info :: (p_create_info : *VkDebugUtilsMessengerC
 debug_callback :: (messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: *VkDebugUtilsMessengerCallbackDataEXT, pUserData: *void) -> VkBool32 #c_call {
   new_context: Context;
   push_context new_context {
-    print("validation layer:%\n", to_string(pCallbackData.pMessage));
+    if messageSeverity > .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT { 
+      print("validation layer:%\n", to_string(pCallbackData.pMessage));
+    }
   }
   return VK_FALSE;
 }
