@@ -57,6 +57,7 @@ cleanup :: (instance : VkInstance) {
   deinit_vulkan(instance);
 }
 
+// create_instance
 init_vulkan :: () -> bool, VkInstance {
 
   // First we will check that all of our validation layers are supported.
@@ -113,10 +114,13 @@ init_vulkan :: () -> bool, VkInstance {
   create_info.enabledExtensionCount = cast(u32) extensions.count;
   create_info.ppEnabledExtensionNames = extensions.data;
   
+  debug_create_info : VkDebugUtilsMessengerCreateInfoEXT;
   if validation_layers_enabled {
     create_info.enabledLayerCount = cast(u32) validation_layers.count;
     create_info.ppEnabledLayerNames = validation_layers.data;
-    // print("Test:%,%\n", create_info.enabledLayerCount, to_string(&create_info.ppEnabledLayerNames));
+  
+    populate_debug_messenger_create_info(*debug_create_info);
+    create_info.pNext = cast(*VkDebugUtilsMessengerCreateInfoEXT) *debug_create_info;
   } else {
     create_info.enabledLayerCount = 0;
   }
@@ -136,11 +140,8 @@ init_vulkan :: () -> bool, VkInstance {
   // Setup our debug messenger
   if validation_layers_enabled {
     create_debug_messenger : VkDebugUtilsMessengerCreateInfoEXT;
-    create_debug_messenger.sType = .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    create_debug_messenger.messageSeverity = .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    create_debug_messenger.messageType = VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    create_debug_messenger.pfnUserCallback = debug_callback;
-    // createInfo.pUserData = nullptr; // Optional
+
+    populate_debug_messenger_create_info(*create_debug_messenger);
 
     if (create_debug_utils_messenger_ext(instance, *create_debug_messenger, null, *debug_messenger) != .VK_SUCCESS) {
       print("%\n", "failed to set up debug messenger!");      
@@ -150,6 +151,14 @@ init_vulkan :: () -> bool, VkInstance {
   }
 
   return vulkan_initialized, instance;
+}
+
+populate_debug_messenger_create_info :: (p_create_info : *VkDebugUtilsMessengerCreateInfoEXT) {
+  p_create_info.sType = .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+  p_create_info.messageSeverity = .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  p_create_info.messageType = VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+  p_create_info.pfnUserCallback = debug_callback;
+  // p_create_info.pUserData = nullptr; // Optional
 }
 
 debug_callback :: (messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: *VkDebugUtilsMessengerCallbackDataEXT, pUserData: *void) -> VkBool32 #c_call {
@@ -218,16 +227,4 @@ check_validiation_layer_support :: () -> bool {
   }
 
   return true;
-}
-
-setup_debug_messenger :: () {
-  // create_info : VkDebugUtilsMessengerCreateInfoEXT;
-  // create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  // create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  // create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-  // create_info.pfnUserCallback = debugCallback;
-
-  // if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-  //   print("failed to set up debug messenger!");
-  // }
 }
