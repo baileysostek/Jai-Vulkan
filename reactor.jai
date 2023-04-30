@@ -7,11 +7,13 @@ ShaderManager :: #import,file "shader_manager.jai";
 
 #import "Basic";
 #import "Vulkan";
+#import "String";
 
 DEBUG :: true;
 
 validation_layers_enabled := false;
 validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
+required_device_extensions := (*u8).[VK_KHR_SWAPCHAIN_EXTENSION_NAME.data]; // How the device can interact with other hardware.
 
 debug_messenger : VkDebugUtilsMessengerEXT;
 
@@ -208,7 +210,6 @@ is_device_suitable :: ( device : VkPhysicalDevice ) -> bool {
   indices := find_queue_famlilies(device);
 
   has_indices := QueueFamilyIndices.isComplete(indices);
-
   if has_indices {
     device_properties : VkPhysicalDeviceProperties;
     device_features   : VkPhysicalDeviceFeatures;
@@ -220,9 +221,37 @@ is_device_suitable :: ( device : VkPhysicalDevice ) -> bool {
     print("%\n", to_string(device_properties.deviceName));
   }
 
-  return has_indices;
+  // Check if required extensions are available on this device
+  device_supports_required_extensions := check_device_extension_support(device);
+  if device_supports_required_extensions {
+    print("Device supports all extensions.\n");
+  }
+
+  return has_indices && device_supports_required_extensions;
 
   // return device_properties.deviceType == .VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && device_features.geometryShader;
+}
+
+check_device_extension_support :: (device : VkPhysicalDevice) -> bool {
+  extension_count : u32;
+  vkEnumerateDeviceExtensionProperties(device, null, *extension_count, null);
+  available_extensions := NewArray(extension_count , VkExtensionProperties);
+  defer free(available_extensions.data);
+  vkEnumerateDeviceExtensionProperties(device, null, *extension_count, available_extensions.data);
+  
+  // TODO replace this with a set.
+  for required_device_extensions {
+    required_extension : string = to_string(it);
+    found_extension := false;
+    for available_extensions {
+      available_extension : string = stop_at_any(to_string(it.extensionName), "\0");
+      found_extension = compare(available_extension, required_extension) == 0;
+      if found_extension then break;
+    }
+    if !found_extension then return false;
+  }
+
+  return true;
 }
 
 NullableU32 :: struct {
@@ -271,6 +300,20 @@ find_queue_famlilies :: (device : VkPhysicalDevice) -> QueueFamilyIndices {
   return indices;
 }
 
+// Querying Details of swap chain support
+SwapChainSupportDetails :: struct {
+  capabilities : VkSurfaceCapabilitiesKHR;
+  // TODO defer free of these resources
+  formats : [..] VkSurfaceFormatKHR;
+  present_modes : [..] VkPresentInfoKHR;
+};
+
+query_swap_chain_support_details :: () -> SwapChainSupportDetails {
+  details : SwapChainSupportDetails;
+
+  return details;
+}
+
 // Logical Devices
 create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDevice) {
   indices := find_queue_famlilies(physical_device);
@@ -303,7 +346,9 @@ create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDev
 
   create_info.pEnabledFeatures = *device_features;
 
-  create_info.enabledExtensionCount = 0;
+  create_info.enabledExtensionCount = cast(u32) required_device_extensions.count;
+  create_info.ppEnabledExtensionNames = required_device_extensions.data;
+
   if validation_layers_enabled {
     create_info.enabledLayerCount = cast(u32) validation_layers.count;
     create_info.ppEnabledLayerNames = validation_layers.data;
