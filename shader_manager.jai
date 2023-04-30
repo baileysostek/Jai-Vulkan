@@ -15,7 +15,7 @@ load_shader :: (file_path : string) -> bool , int {
 }
 
 delete_shader :: (shader_id : int) {
-  print("Out of scope so deleting now.\n");
+
 }
 
 create_program :: (vertex_shader_id : int, fragment_shader_id : int) -> bool, int {

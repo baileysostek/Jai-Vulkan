@@ -6,6 +6,12 @@ ShaderManager :: #import,file "shader_manager.jai";
 
 DEBUG :: true;
 
+
+validation_layers_enabled := false;
+validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
+
+debug_messenger : VkDebugUtilsMessengerEXT;
+
 main :: () {
   window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
 
@@ -37,12 +43,24 @@ main :: () {
 
     // draw_frame();
   }
+
+  cleanup(vk_instance);
+}
+
+cleanup :: (instance : VkInstance) {
+
+  if validation_layers_enabled {
+    // Cleanup our debug messenger.
+    destroy_debug_utils_messenger_ext(instance, debug_messenger, null);
+  }
+
+  deinit_vulkan(instance);
 }
 
 init_vulkan :: () -> bool, VkInstance {
 
   // First we will check that all of our validation layers are supported.
-  validation_layers_enabled := check_validiation_layer_support();
+  validation_layers_enabled = check_validiation_layer_support();
   if DEBUG && !validation_layers_enabled {
     print("Error: Some validation layers are not supported.");
     return false, null;
@@ -72,11 +90,17 @@ init_vulkan :: () -> bool, VkInstance {
     // @ToDo: Non-Windows version
     extensions[1] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data;
   } else {
-    #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These ar ethe debug extensions.
-      extensions: [3] *u8;
-      extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME.data;
-      extensions[1] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data;
-      extensions[2] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME.data;
+    #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These are the debug extensions.
+
+      extensions: [..] *u8;
+      array_add(*extensions , VK_KHR_SURFACE_EXTENSION_NAME.data);
+      array_add(*extensions , VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data);
+      array_add(*extensions , VK_EXT_DEBUG_REPORT_EXTENSION_NAME.data);
+
+      if validation_layers_enabled {
+        array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+      }
+
     } else {
       extensions: [0] *u8;
       // @ToDo: Non-Windows version
@@ -84,8 +108,9 @@ init_vulkan :: () -> bool, VkInstance {
     }
   }
 
+
   // The contnet of these variables will vary based on OS and available extensions
-  create_info.enabledExtensionCount = extensions.count;
+  create_info.enabledExtensionCount = cast(u32) extensions.count;
   create_info.ppEnabledExtensionNames = extensions.data;
   
   if validation_layers_enabled {
@@ -103,10 +128,52 @@ init_vulkan :: () -> bool, VkInstance {
   // VkResult is an abstraction of a boolean... or an enum representing an error code.
 
   vulkan_initialized := (result == .SUCCESS);
+  if !vulkan_initialized then return false, null;
 
-  if vulkan_initialized then print_available_vulkan_extensions();
+  // Print the available extentions
+  print_available_vulkan_extensions();
+
+  // Setup our debug messenger
+  if validation_layers_enabled {
+    create_debug_messenger : VkDebugUtilsMessengerCreateInfoEXT;
+    create_debug_messenger.sType = .VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    create_debug_messenger.messageSeverity = .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    create_debug_messenger.messageType = VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    create_debug_messenger.pfnUserCallback = debug_callback;
+    // createInfo.pUserData = nullptr; // Optional
+
+    if (create_debug_utils_messenger_ext(instance, *create_debug_messenger, null, *debug_messenger) != .VK_SUCCESS) {
+      print("%\n", "failed to set up debug messenger!");      
+    } else {
+      print("%\n", "Created debug messenger!");    
+    }
+  }
 
   return vulkan_initialized, instance;
+}
+
+debug_callback :: (messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: *VkDebugUtilsMessengerCallbackDataEXT, pUserData: *void) -> VkBool32 #c_call {
+  new_context: Context;
+  push_context new_context {
+    print("validation layer:%\n", to_string(pCallbackData.pMessage));
+  }
+  return VK_FALSE;
+}
+
+create_debug_utils_messenger_ext :: (instance : VkInstance, p_create_info : *VkDebugUtilsMessengerCreateInfoEXT, p_allocator : *VkAllocationCallbacks, p_debug_messenger : *VkDebugUtilsMessengerEXT) -> VkResult {
+  func := cast(PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+  if func {
+    return func(instance, p_create_info, p_allocator, p_debug_messenger);
+  } else {
+    return .VK_ERROR_EXTENSION_NOT_PRESENT;
+  }
+}
+
+destroy_debug_utils_messenger_ext :: (instance : VkInstance, debug_messenger : VkDebugUtilsMessengerEXT, p_allocator : *VkAllocationCallbacks) {
+  func := cast(PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+  if func {
+    func(instance, debug_messenger, p_allocator);
+  }
 }
 
 print_available_vulkan_extensions :: () {
@@ -122,8 +189,6 @@ print_available_vulkan_extensions :: () {
 deinit_vulkan :: (instance : VkInstance) {
   vkDestroyInstance(instance, null);
 }
-
-validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
 
 check_validiation_layer_support :: () -> bool {
   layer_count: u32;
@@ -142,7 +207,7 @@ check_validiation_layer_support :: () -> bool {
     // Search for our layer
     for available_layers {
       available_layer := to_string(it.layerName.data);
-      print("% == % ? % \n", validation_layer, available_layer, validation_layer == available_layer);
+      // print("% == % ? % \n", validation_layer, available_layer, validation_layer == available_layer);
       if validation_layer == available_layer {
         found_layer = true;
         break;
