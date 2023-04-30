@@ -247,12 +247,12 @@ init_vulkan :: () -> bool {
 
 
 deinit_vulkan :: () {
-    #if DEBUG {
-        if vkDestroyDebugReportCallbackEXT && debug_callback_handle {
-            vkDestroyDebugReportCallbackEXT(instance, debug_callback_handle, null);
-        }
+  #if DEBUG {
+    if vkDestroyDebugReportCallbackEXT && debug_callback_handle {
+      vkDestroyDebugReportCallbackEXT(instance, debug_callback_handle, null);
     }
-    vkDestroyInstance(instance, null);
+  }
+  vkDestroyInstance(instance, null);
 }
 
 init_surface :: () -> bool {
