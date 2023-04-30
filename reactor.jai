@@ -27,7 +27,7 @@ main :: () {
 
   physical_device = pick_physical_device(vk_instance);
 
-  create_logical_device(vk_instance, physical_device, logical_device);
+  create_logical_device(vk_instance, physical_device);
 
   vert_success, vert_id := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
   frag_success, frag_id := ShaderManager.load_shader("./res/shaders/simple_shader.frag.spv");
@@ -67,7 +67,7 @@ cleanup :: (instance : VkInstance) {
     destroy_debug_utils_messenger_ext(instance, debug_messenger, null);
   }
 
-  deinit_vulkan(instance);
+  vkDestroyInstance(instance, null);
 }
 
 // create_instance
@@ -98,24 +98,19 @@ init_vulkan :: () -> bool, VkInstance {
   create_info.sType = .INSTANCE_CREATE_INFO;
   create_info.pApplicationInfo = *app_info; // Pass a pointer to our other struct.
 
-  #if !DEBUG {
-    extensions: [2] *u8;
-    extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME.data;
-    // @ToDo: Non-Windows version
-    extensions[1] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data;
-  } else {
-    extensions: [..] *u8;
+  // Determine which extensions we want to use.
+  extensions: [..] *u8;
 
-    #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These are the debug extensions.
-      array_add(*extensions , VK_KHR_SURFACE_EXTENSION_NAME.data);
-      array_add(*extensions , VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data);
-      array_add(*extensions , VK_EXT_DEBUG_REPORT_EXTENSION_NAME.data);
-    }
+  // We want to render to a surface so we will use this extension
+  array_add(*extensions , VK_KHR_SURFACE_EXTENSION_NAME.data);
 
-    if validation_layers_enabled {
-      array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
+  #if OS == .WINDOWS { // We can load Windows Specific Vulkan Extensions here. These are the debug extensions.
+    array_add(*extensions , VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data);
+  }
 
+  if validation_layers_enabled {
+    array_add(*extensions , VK_EXT_DEBUG_REPORT_EXTENSION_NAME.data);
+    array_add(*extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
 
@@ -241,7 +236,7 @@ find_queue_famlilies :: (device : VkPhysicalDevice) -> QueueFamilyIndices {
 }
 
 // Logical Devices
-create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDevice, logical_device : VkDevice) {
+create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDevice) {
   indices := find_queue_famlilies(physical_device);
 
   queue_create_info : VkDeviceQueueCreateInfo;
@@ -320,10 +315,6 @@ print_available_vulkan_extensions :: () {
   vkEnumerateInstanceExtensionProperties(null, *extension_count, extension_array.data);
   print("Available extensions:\n");
   for extension_array print("    % (%)\n", to_string(it.extensionName.data), it.specVersion);
-}
-
-deinit_vulkan :: (instance : VkInstance) {
-  vkDestroyInstance(instance, null);
 }
 
 check_validiation_layer_support :: () -> bool {
