@@ -11,7 +11,6 @@ main :: () {
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
-
   print("Initialized Vulkan:%\n", success);
 
   vert_success, vert_id := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
@@ -41,6 +40,13 @@ main :: () {
 }
 
 init_vulkan :: () -> bool, VkInstance {
+
+  // First we will check that all of our validation layers are supported.
+  validation_layers_enabled := check_validiation_layer_support();
+  if DEBUG && !validation_layers_enabled {
+    print("Error: Some validation layers are not supported.");
+    return false, null;
+  }
 
   // Application Info
   app_info: VkApplicationInfo;
@@ -82,8 +88,14 @@ init_vulkan :: () -> bool, VkInstance {
   create_info.enabledExtensionCount = extensions.count;
   create_info.ppEnabledExtensionNames = extensions.data;
   
-  // TODO address later
-  create_info.enabledLayerCount = 0;
+  if validation_layers_enabled {
+    create_info.enabledLayerCount = cast(u32) validation_layers.count;
+    create_info.ppEnabledLayerNames = validation_layers.data;
+    // print("Test:%,%\n", create_info.enabledLayerCount, to_string(&create_info.ppEnabledLayerNames));
+  } else {
+    create_info.enabledLayerCount = 0;
+  }
+  
 
   // Now that we have specified eveyrthing we can issue a create call.
   instance : VkInstance;
@@ -107,8 +119,50 @@ print_available_vulkan_extensions :: () {
   for extension_array print("    % (%)\n", to_string(it.extensionName.data), it.specVersion);
 }
 
-deinit_vulkan :: () {
+deinit_vulkan :: (instance : VkInstance) {
   vkDestroyInstance(instance, null);
 }
 
-// Now we need to work on creating a vulkan device. 
+validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
+
+check_validiation_layer_support :: () -> bool {
+  layer_count: u32;
+  vkEnumerateInstanceLayerProperties(*layer_count, null);
+  available_layers := NewArray(layer_count, VkLayerProperties);
+  defer free(available_layers.data);
+  vkEnumerateInstanceLayerProperties(*layer_count, available_layers.data);
+
+  // Check that every validation layer is supported.
+  for validation_layers {
+    validation_layer := to_string(it);
+
+    // Try to find this layer in our layers
+    found_layer := false;
+
+    // Search for our layer
+    for available_layers {
+      available_layer := to_string(it.layerName.data);
+      print("% == % ? % \n", validation_layer, available_layer, validation_layer == available_layer);
+      if validation_layer == available_layer {
+        found_layer = true;
+        break;
+      }
+    }
+
+    if !found_layer return false;
+  }
+
+  return true;
+}
+
+setup_debug_messenger :: () {
+  // create_info : VkDebugUtilsMessengerCreateInfoEXT;
+  // create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+  // create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  // create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+  // create_info.pfnUserCallback = debugCallback;
+
+  // if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+  //   print("failed to set up debug messenger!");
+  // }
+}
