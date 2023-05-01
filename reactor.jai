@@ -28,6 +28,12 @@ present_queue : VkQueue;
 // Create a surface
 surface : VkSurfaceKHR;
 
+// Our Swapchain
+swap_chain : VkSwapchainKHR;
+swap_chain_images : [] VkImage;
+swap_chain_image_format : VkFormat;
+swap_chain_extent : VkExtent2D;
+
 main :: () {
   // First we create a window.
   window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
@@ -43,7 +49,7 @@ main :: () {
   physical_device = pick_physical_device(vk_instance);
   create_logical_device(vk_instance, physical_device);
 
-  // Now we setup our surface
+  create_swap_chain(window);
 
 
   vert_success, vert_id := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
@@ -75,6 +81,12 @@ main :: () {
 }
 
 cleanup :: (instance : VkInstance) {
+
+  // Free our images
+  free(swap_chain_images.data);
+
+  // Destroy our Swapchain
+  vkDestroySwapchainKHR(logical_device, swap_chain, null);
 
   // Destroy our Logical Device.
   vkDestroyDevice(logical_device, null);
@@ -227,7 +239,17 @@ is_device_suitable :: ( device : VkPhysicalDevice ) -> bool {
     print("Device supports all extensions.\n");
   }
 
-  return has_indices && device_supports_required_extensions;
+  // Check if the physical device has a supported format and presentation mode.
+  device_supports_format_and_presentation_mode := false;
+  if device_supports_required_extensions {
+    swap_chain_support := query_swap_chain_support_details(device, surface);
+    device_supports_format_and_presentation_mode = swap_chain_support.formats.count > 0 && swap_chain_support.present_modes.count > 0;
+  }
+  if device_supports_format_and_presentation_mode {
+    print("Device supports presentation and format.\n");
+  }
+
+  return has_indices && device_supports_required_extensions && device_supports_format_and_presentation_mode;
 
   // return device_properties.deviceType == .VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && device_features.geometryShader;
 }
@@ -300,18 +322,142 @@ find_queue_famlilies :: (device : VkPhysicalDevice) -> QueueFamilyIndices {
   return indices;
 }
 
+// Swapchain stuff.
 // Querying Details of swap chain support
 SwapChainSupportDetails :: struct {
   capabilities : VkSurfaceCapabilitiesKHR;
   // TODO defer free of these resources
-  formats : [..] VkSurfaceFormatKHR;
-  present_modes : [..] VkPresentInfoKHR;
+  formats : [] VkSurfaceFormatKHR;
+  present_modes : [] VkPresentModeKHR;
 };
 
-query_swap_chain_support_details :: () -> SwapChainSupportDetails {
+query_swap_chain_support_details :: (device : VkPhysicalDevice, surface : VkSurfaceKHR) -> SwapChainSupportDetails {
   details : SwapChainSupportDetails;
 
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, *(details.capabilities));
+
+  // Query supported surface formats.
+  format_count : u32;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, *format_count, null);
+  if format_count != 0 {
+    details.formats = NewArray(format_count , VkSurfaceFormatKHR);
+    defer free(details.formats.data);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, *format_count, details.formats.data);
+  }
+
+  // Query supported presentation modes
+  presentation_mode_count : u32;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, *presentation_mode_count, null);
+  if presentation_mode_count != 0{
+    details.present_modes = NewArray(presentation_mode_count, VkPresentModeKHR);
+    defer free(details.present_modes.data);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, *presentation_mode_count, details.present_modes.data);
+  }
+
   return details;
+}
+
+create_swap_chain :: (window : ReactorWindow.ReactorWindow) {
+  swap_chain_support := query_swap_chain_support_details(physical_device, surface);
+
+  surface_format := choose_swap_surface_format(swap_chain_support.formats);
+  present_mode := choose_swap_present_mode(swap_chain_support.present_modes);
+  extent := choose_swap_extent(swap_chain_support.capabilities, window);
+
+  // Request 1 more than the min images in the swapchain. Clamp to max
+  image_count : u32 = swap_chain_support.capabilities.minImageCount + 1;
+  if swap_chain_support.capabilities.maxImageCount > 0 && image_count > swap_chain_support.capabilities.maxImageCount {
+    image_count = swap_chain_support.capabilities.maxImageCount;
+  }
+
+  create_info : VkSwapchainCreateInfoKHR;
+  create_info.sType = .VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+  create_info.surface = surface;
+
+  create_info.minImageCount = image_count;
+  create_info.imageFormat = surface_format.format;
+  create_info.imageColorSpace = surface_format.colorSpace;
+  create_info.imageExtent = extent;
+  create_info.imageArrayLayers = 1;
+  create_info.imageUsage = .VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+  indices := find_queue_famlilies(physical_device);
+
+  // TODO some kind of reflection on the struct.
+  queue_family_indices : [2] u32;
+  queue_family_indices[0] = indices.graphics_family.value;
+  queue_family_indices[1] = indices.present_family.value;
+
+  if indices.graphics_family.value != indices.present_family.value {
+    create_info.imageSharingMode = .VK_SHARING_MODE_CONCURRENT;
+    create_info.queueFamilyIndexCount = 2;
+    create_info.pQueueFamilyIndices = queue_family_indices.data;
+  } else {
+    create_info.imageSharingMode = .VK_SHARING_MODE_EXCLUSIVE;
+    create_info.queueFamilyIndexCount = 0;
+    create_info.pQueueFamilyIndices = null;
+  }
+
+  create_info.preTransform = swap_chain_support.capabilities.currentTransform; // Rotate images in the swapchain
+  create_info.compositeAlpha = .VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Blending with other windows.
+
+  create_info.presentMode = present_mode;
+  create_info.clipped = VK_TRUE;
+
+  create_info.oldSwapchain = VK_NULL_HANDLE; // TODO Rebuild the swapchiain in the future
+
+  if vkCreateSwapchainKHR(logical_device, *create_info, null, *swap_chain) != .VK_SUCCESS {
+    print("failed to create swap chain!\n");
+  } else {
+    print("Created swap chain!\n");
+  }
+
+  // Resize and Populate our swap_chain_images buffer
+  swap_chain_image_count : u32;
+  vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, null);
+  swap_chain_images = NewArray(swap_chain_image_count, VkImage);
+  defer free(swap_chain_images.data);
+  vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, swap_chain_images.data);
+
+  // Store the format and extent we are using in this swap_chain.
+  swap_chain_image_format = surface_format.format;
+  swap_chain_extent = extent;
+}
+
+choose_swap_surface_format :: (available_formats : [] VkSurfaceFormatKHR) -> VkSurfaceFormatKHR {
+  //TODO ranking thse based on how good they are.
+  for available_formats {
+    if it.format == .VK_FORMAT_B8G8R8A8_SRGB && it.colorSpace == .VK_COLOR_SPACE_SRGB_NONLINEAR_KHR {
+      return it;
+    }
+  }
+
+  return available_formats[0];
+}
+
+choose_swap_present_mode :: (available_present_modes : [] VkPresentModeKHR) -> VkPresentModeKHR {
+  // Try to pick VK_PRESENT_MODE_MAILBOX_KHR;
+  for available_present_modes {
+    if it == .VK_PRESENT_MODE_MAILBOX_KHR {
+      return it;
+    }
+  }
+
+  return .VK_PRESENT_MODE_FIFO_KHR;
+}
+
+choose_swap_extent :: (capabilities : VkSurfaceCapabilitiesKHR, window : ReactorWindow.ReactorWindow) -> VkExtent2D {
+  if capabilities.currentExtent.width != 4_294_967_295 {
+    return capabilities.currentExtent;
+  } else {
+
+    actual_extent : VkExtent2D = .{
+      xx clamp(window.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+      xx clamp(window.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+    };
+
+    return actual_extent;
+  }
 }
 
 // Logical Devices
