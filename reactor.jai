@@ -34,6 +34,10 @@ swap_chain_images : [] VkImage;
 swap_chain_image_format : VkFormat;
 swap_chain_extent : VkExtent2D;
 
+// Swapchain Image Views
+swap_chain_image_views : [] VkImageView;
+
+
 main :: () {
   // First we create a window.
   window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
@@ -50,10 +54,9 @@ main :: () {
   create_logical_device(vk_instance, physical_device);
 
   create_swap_chain(window);
+  create_image_views();
 
-
-  vert_success, vert_id := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
-  frag_success, frag_id := ShaderManager.load_shader("./res/shaders/simple_shader.frag.spv");
+  create_graphics_pipeline();
 
   while !ReactorWindow.is_close_requested(window) {
     ReactorWindow.poll_window_events(*window);
@@ -81,6 +84,10 @@ main :: () {
 }
 
 cleanup :: (instance : VkInstance) {
+  // Destroy our Image views
+  for swap_chain_image_views {
+    vkDestroyImageView(logical_device, it, null);
+  }
 
   // Free our images
   free(swap_chain_images.data);
@@ -416,7 +423,6 @@ create_swap_chain :: (window : ReactorWindow.ReactorWindow) {
   swap_chain_image_count : u32;
   vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, null);
   swap_chain_images = NewArray(swap_chain_image_count, VkImage);
-  defer free(swap_chain_images.data);
   vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, swap_chain_images.data);
 
   // Store the format and extent we are using in this swap_chain.
@@ -457,6 +463,38 @@ choose_swap_extent :: (capabilities : VkSurfaceCapabilitiesKHR, window : Reactor
     };
 
     return actual_extent;
+  }
+}
+
+// Image Views
+create_image_views :: () {
+  swap_chain_image_views = NewArray(swap_chain_images.count, VkImageView);
+
+  for it, index : swap_chain_images {
+    create_info : VkImageViewCreateInfo;
+    create_info.sType = .VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    create_info.image = it;
+    create_info.viewType = .VK_IMAGE_VIEW_TYPE_2D; // What kind of image this is... Dimentionally
+    create_info.format = swap_chain_image_format;
+
+    // Map the color components to channels
+    create_info.components.r = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    create_info.components.g = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    create_info.components.b = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    create_info.components.a = .VK_COMPONENT_SWIZZLE_IDENTITY;
+
+    create_info.subresourceRange.aspectMask = .VK_IMAGE_ASPECT_COLOR_BIT;
+    create_info.subresourceRange.baseMipLevel = 0; // Mipmapping?
+    create_info.subresourceRange.levelCount = 1; // Number of MipMap images?
+    create_info.subresourceRange.baseArrayLayer = 0;
+    create_info.subresourceRange.layerCount = 1;
+
+    if vkCreateImageView(logical_device, *create_info, null, *swap_chain_image_views[index]) != .VK_SUCCESS {
+      print("failed to create image views!\n");
+    } else {
+      print("created image view!\n");
+    }
+    
   }
 }
 
@@ -597,4 +635,57 @@ init_surface :: (instance : VkInstance, window : ReactorWindow.ReactorWindow) ->
     #assert(false);
     return false;
   }
+}
+
+// Create our Graphics Pipeline
+create_graphics_pipeline :: () {
+  vert_success, vert_source := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
+  frag_success, frag_source := ShaderManager.load_shader("./res/shaders/simple_shader.frag.spv");
+
+  vert_module_success, vert_shader_module := create_shader_module(vert_source);
+  frag_module_success, frag_shader_module := create_shader_module(frag_source);
+
+  // Create our pipeline
+  vertex_shader_stage_info : VkPipelineShaderStageCreateInfo;
+  vertex_shader_stage_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  vertex_shader_stage_info.stage = .VK_SHADER_STAGE_VERTEX_BIT;
+  vertex_shader_stage_info.module = vert_shader_module;
+  vertex_shader_stage_info.pName = "main"; // Entrypoint
+  // vertex_shader_stage_info.pSpecializationInfo // Not used for now.
+
+  fragment_shader_stage_info : VkPipelineShaderStageCreateInfo;
+  fragment_shader_stage_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  fragment_shader_stage_info.stage = .VK_SHADER_STAGE_FRAGMENT_BIT;
+  fragment_shader_stage_info.module = frag_shader_module;
+  fragment_shader_stage_info.pName = "main"; // Entrypoint  
+
+  // Define our shader stages
+  shader_stages : [2] VkPipelineShaderStageCreateInfo;
+  shader_stages[0] = vertex_shader_stage_info;
+  shader_stages[1] = fragment_shader_stage_info;
+
+
+  // Destroy our shaders
+  vkDestroyShaderModule(logical_device, vert_shader_module, null);
+  vkDestroyShaderModule(logical_device, frag_shader_module, null);
+
+  // Free our files
+  free(vert_source);
+  free(frag_source);
+}
+
+create_shader_module :: ( source : string) -> bool, VkShaderModule {
+
+  create_info : VkShaderModuleCreateInfo;
+  create_info.sType = .VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  create_info.codeSize = cast(u64) source.count;
+  create_info.pCode = cast(*u32)*source[0];
+
+  shader_module : VkShaderModule;
+  if vkCreateShaderModule(logical_device, *create_info, null, *shader_module) != .VK_SUCCESS {
+    print("failed to create shader module!\n");
+    return false, null;
+  }
+
+  return true, shader_module;
 }
