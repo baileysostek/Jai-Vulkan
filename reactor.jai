@@ -37,6 +37,11 @@ swap_chain_extent : VkExtent2D;
 // Swapchain Image Views
 swap_chain_image_views : [] VkImageView;
 
+// Graphics Pipeline
+render_pass : VkRenderPass;
+pipeline_layout : VkPipelineLayout;
+graphics_pipeline : VkPipeline;
+
 
 main :: () {
   // First we create a window.
@@ -47,15 +52,13 @@ main :: () {
   print("Initialized Vulkan:%\n", success);
 
   // Setup our surface
-  init_surface(vk_instance, window);
-
+  create_surface(vk_instance, window);
   // Query physical devices and choose one. 
   physical_device = pick_physical_device(vk_instance);
   create_logical_device(vk_instance, physical_device);
-
   create_swap_chain(window);
   create_image_views();
-
+  create_render_pass();
   create_graphics_pipeline();
 
   while !ReactorWindow.is_close_requested(window) {
@@ -84,6 +87,14 @@ main :: () {
 }
 
 cleanup :: (instance : VkInstance) {
+
+  // Destory our Pipeline
+  vkDestroyPipeline(logical_device, graphics_pipeline, null);
+  // Destroy our PipelineLayout
+  vkDestroyPipelineLayout(logical_device, pipeline_layout, null);
+  // Destroy our Render Pass
+  vkDestroyRenderPass(logical_device, render_pass, null);
+
   // Destroy our Image views
   for swap_chain_image_views {
     vkDestroyImageView(logical_device, it, null);
@@ -622,7 +633,7 @@ check_validiation_layer_support :: () -> bool {
   return true;
 }
 
-init_surface :: (instance : VkInstance, window : ReactorWindow.ReactorWindow) -> bool {
+create_surface :: (instance : VkInstance, window : ReactorWindow.ReactorWindow) -> bool {
   #if OS == .WINDOWS {
     surfaceCreateInfo: VkWin32SurfaceCreateInfoKHR; 
     surfaceCreateInfo.sType     = .WIN32_SURFACE_CREATE_INFO_KHR;
@@ -634,6 +645,41 @@ init_surface :: (instance : VkInstance, window : ReactorWindow.ReactorWindow) ->
     // @ToDo
     #assert(false);
     return false;
+  }
+}
+
+// Create our Render Pass
+create_render_pass :: () {
+  color_attachment : VkAttachmentDescription;
+  color_attachment.format = swap_chain_image_format;
+  color_attachment.samples = .VK_SAMPLE_COUNT_1_BIT;
+  color_attachment.loadOp = .VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear color bit on load?
+  color_attachment.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
+  color_attachment.stencilLoadOp = .VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  color_attachment.stencilStoreOp = .VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  color_attachment.initialLayout = .VK_IMAGE_LAYOUT_UNDEFINED;
+  color_attachment.finalLayout = .VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+  color_attachment_ref : VkAttachmentReference;
+  color_attachment_ref.attachment = 0;
+  color_attachment_ref.layout = .VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+  subpass : VkSubpassDescription;
+  subpass.pipelineBindPoint = .VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass.colorAttachmentCount = 1;
+  subpass.pColorAttachments = *color_attachment_ref;
+  
+  render_pass_info : VkRenderPassCreateInfo;
+  render_pass_info.sType = .VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+  render_pass_info.attachmentCount = 1; // Color only
+  render_pass_info.pAttachments = *color_attachment; // array.data later.
+  render_pass_info.subpassCount = 1;
+  render_pass_info.pSubpasses = *subpass;
+
+  if vkCreateRenderPass(logical_device , *render_pass_info, null, *render_pass) != .VK_SUCCESS {
+    print("failed to create render pass!\n");
+  } else {
+    print("created render pass!\n");
   }
 }
 
@@ -659,10 +705,156 @@ create_graphics_pipeline :: () {
   fragment_shader_stage_info.module = frag_shader_module;
   fragment_shader_stage_info.pName = "main"; // Entrypoint  
 
-  // Define our shader stages
+  // Define our shader stages //TODO use dynamic array.
   shader_stages : [2] VkPipelineShaderStageCreateInfo;
   shader_stages[0] = vertex_shader_stage_info;
   shader_stages[1] = fragment_shader_stage_info;
+
+  vertex_input_info : VkPipelineVertexInputStateCreateInfo;
+  vertex_input_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  
+  vertex_input_info.vertexBindingDescriptionCount = 0;
+  vertex_input_info.pVertexBindingDescriptions = null;
+  vertex_input_info.vertexAttributeDescriptionCount = 0;
+  vertex_input_info.pVertexAttributeDescriptions = null;
+
+  // Input Assembly // How vertices should be assembled.
+  input_assembly : VkPipelineInputAssemblyStateCreateInfo;
+  input_assembly.sType = .VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  input_assembly.topology = .VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  input_assembly.primitiveRestartEnable = VK_FALSE;
+
+  // For non-dynamic
+  /**
+  // Define our viewport
+  viewport : VkViewport;
+  viewport.x = 0.0;
+  viewport.y = 0.0;
+  viewport.width = xx swap_chain_extent.width;
+  viewport.height = xx swap_chain_extent.height;
+  viewport.minDepth = 0.0;
+  viewport.maxDepth = 1.0;
+
+  // Sciscor rectangle
+  scissor : VkRect2D;
+  scissor.offset = .{0,0};
+  scissor.extent = swap_chain_extent;
+
+  VkPipelineViewportStateCreateInfo viewportState{};
+  viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewportState.viewportCount = 1;
+  viewportState.pViewports = &viewport;
+  viewportState.scissorCount = 1;
+  viewportState.pScissors = &scissor;
+  */
+
+  viewport_state : VkPipelineViewportStateCreateInfo;
+  viewport_state.sType = .VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewport_state.viewportCount = 1;
+  viewport_state.scissorCount = 1;
+
+  // Define our Rasterizer
+  rasterizer : VkPipelineRasterizationStateCreateInfo;
+  rasterizer.sType = .VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizer.depthClampEnable = VK_FALSE;
+  /**
+    If depthClampEnable is set to VK_TRUE, then fragments that are beyond the near and far planes are clamped to them as opposed to discarding them. This is useful in some special cases like shadow maps. Using this requires enabling a GPU feature.
+  */
+  rasterizer.rasterizerDiscardEnable = VK_FALSE;
+  rasterizer.polygonMode = .VK_POLYGON_MODE_FILL;
+  rasterizer.lineWidth = 1.0; // Bigger than this requires enabling WideLines
+  rasterizer.cullMode = .VK_CULL_MODE_BACK_BIT;
+  rasterizer.frontFace = .VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.depthBiasEnable = VK_FALSE; // Could this be used to help fix shadow Acne?
+  rasterizer.depthBiasConstantFactor = 0.0;
+  rasterizer.depthBiasClamp = 0.0;
+  rasterizer.depthBiasSlopeFactor = 0.0;
+
+  // Multisampling
+  multisampling : VkPipelineMultisampleStateCreateInfo;
+  multisampling.sType = .VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  multisampling.sampleShadingEnable = VK_FALSE;
+  multisampling.rasterizationSamples = .VK_SAMPLE_COUNT_1_BIT;
+  multisampling.minSampleShading = 1.0;
+  multisampling.pSampleMask = null;
+  multisampling.alphaToCoverageEnable = VK_FALSE;
+  multisampling.alphaToOneEnable = VK_FALSE;
+
+  // TODO VkPipelineDepthStencilStateCreateInfo
+
+  // Color Blending // Blend Mode?
+  color_blend_attachment : VkPipelineColorBlendAttachmentState;
+  // color_blend_attachment.colorWriteMask = xx .VK_COLOR_COMPONENT_R_BIT | xx .VK_COLOR_COMPONENT_G_BIT | xx .VK_COLOR_COMPONENT_B_BIT | .VK_COLOR_COMPONENT_A_BIT;
+  color_blend_attachment.colorWriteMask = 0x1 | 0x2 | 0x4 | 0x8; // TODO fix OR of enums
+  color_blend_attachment.blendEnable = VK_FALSE; // VK_TRUE 
+  color_blend_attachment.srcColorBlendFactor = .VK_BLEND_FACTOR_ONE; //VK_BLEND_FACTOR_SRC_ALPHA
+  color_blend_attachment.dstColorBlendFactor = .VK_BLEND_FACTOR_ZERO; //VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA
+  color_blend_attachment.colorBlendOp = .VK_BLEND_OP_ADD;
+  color_blend_attachment.srcAlphaBlendFactor = .VK_BLEND_FACTOR_ONE;
+  color_blend_attachment.dstAlphaBlendFactor = .VK_BLEND_FACTOR_ZERO;
+  color_blend_attachment.alphaBlendOp = .VK_BLEND_OP_ADD;
+
+  color_blending : VkPipelineColorBlendStateCreateInfo;
+  color_blending.sType = .VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  color_blending.logicOpEnable = VK_FALSE;
+  color_blending.logicOp = .VK_LOGIC_OP_COPY;
+  color_blending.attachmentCount = 1;
+  color_blending.pAttachments = *color_blend_attachment;
+  color_blending.blendConstants[0] = 0.0;
+  color_blending.blendConstants[1] = 0.0;
+  color_blending.blendConstants[2] = 0.0;
+  color_blending.blendConstants[3] = 0.0;
+
+  // create the popeline
+  pipeline_layout_info : VkPipelineLayoutCreateInfo;
+  pipeline_layout_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipeline_layout_info.setLayoutCount = 0;
+  pipeline_layout_info.pSetLayouts = null;
+  pipeline_layout_info.pushConstantRangeCount = 0;
+  pipeline_layout_info.pPushConstantRanges = null;
+
+  if vkCreatePipelineLayout(logical_device , *pipeline_layout_info, null, *pipeline_layout) != .VK_SUCCESS {
+    print("failed to create pipeline layout!\n");
+  } else {
+    print("created pipeline layout!\n");
+  }
+
+  // Configure Dynamic State
+  dynamic_states := VkDynamicState.[.VK_DYNAMIC_STATE_VIEWPORT, .VK_DYNAMIC_STATE_SCISSOR];
+
+  dynamic_state : VkPipelineDynamicStateCreateInfo;
+  dynamic_state.sType = .VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamic_state.dynamicStateCount = dynamic_states.count;
+  dynamic_state.pDynamicStates = dynamic_states.data;
+
+  // Create our pipeline!
+    // Reference Create info
+  pipeline_info : VkGraphicsPipelineCreateInfo;
+  pipeline_info.sType = .VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  // Reference Fixed Function Stages
+  pipeline_info.stageCount = 2;
+  pipeline_info.pStages = shader_stages.data; // ERROR MAYBE??
+  pipeline_info.pVertexInputState = *vertex_input_info;
+  pipeline_info.pInputAssemblyState = *input_assembly;
+  pipeline_info.pViewportState = *viewport_state;
+  pipeline_info.pRasterizationState = *rasterizer;
+  pipeline_info.pMultisampleState = *multisampling;
+  pipeline_info.pDepthStencilState = null; 
+  pipeline_info.pColorBlendState = *color_blending;
+  pipeline_info.pDynamicState = *dynamic_state;
+  // Reference pipeline layout
+  pipeline_info.layout = pipeline_layout;
+  // Render Pass
+  pipeline_info.renderPass = render_pass;
+  pipeline_info.subpass = 0;
+  // Pipeline recreation stuff
+  pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+  pipeline_info.basePipelineIndex = -1;
+
+  if vkCreateGraphicsPipelines(logical_device, VK_NULL_HANDLE, 1, *pipeline_info, null, *graphics_pipeline) != .VK_SUCCESS {
+    print("failed to create graphics pipeline!\n");
+  } else {
+    print("created graphics pipeline!\n");
+  }
 
 
   // Destroy our shaders
