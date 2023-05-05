@@ -9,18 +9,25 @@ ShaderManager :: #import,file "shader_manager.jai";
 #import "Vulkan";
 #import "String";
 #import "Math";
+#import "Input";
 
 DEBUG :: true;
 
+// Refrence to our window
+window : ReactorWindow.ReactorWindow;
+window_changed_sizes := false;
+
+// Vulkan configuration stuff.
 validation_layers_enabled := false;
 validation_layers := (*u8).["VK_LAYER_KHRONOS_validation"];
 required_device_extensions := (*u8).[VK_KHR_SWAPCHAIN_EXTENSION_NAME.data]; // How the device can interact with other hardware.
 
+// Our Debug message callbacks
 debug_messenger : VkDebugUtilsMessengerEXT;
 
 // Devices
 physical_device : VkPhysicalDevice = VK_NULL_HANDLE; // Our seelcted GFX Card
-logical_device : VkDevice = VK_NULL_HANDLE;
+device : VkDevice = VK_NULL_HANDLE;
 
 // Queue which we can enqueueu commands to and then submit to our device.
 graphics_queue : VkQueue;
@@ -47,13 +54,17 @@ graphics_pipeline : VkPipeline;
 // Command Pool
 command_pool : VkCommandPool;
 
-// Command Buffer
-command_buffer : VkCommandBuffer;
+// How many frames in flight we allow at a time.
+MAX_FRAMES_IN_FLIGHT :: 2;
 
-// Semaphore / Fence
-image_available_semaphore : VkSemaphore;
-render_finished_semaphore : VkSemaphore;
-in_flight_fence : VkFence;
+// Keep track of the frame index
+frame_index : u32 = 0;
+
+// Properties used for each frame
+command_buffers             : [MAX_FRAMES_IN_FLIGHT] VkCommandBuffer;
+image_available_semaphores  : [MAX_FRAMES_IN_FLIGHT] VkSemaphore;
+render_finished_semaphores  : [MAX_FRAMES_IN_FLIGHT] VkSemaphore;
+in_flight_fences            : [MAX_FRAMES_IN_FLIGHT] VkFence;
 
 main :: () {
   // First we create a window.
@@ -68,13 +79,13 @@ main :: () {
   // Query physical devices and choose one. 
   physical_device = pick_physical_device(vk_instance);
   create_logical_device(vk_instance, physical_device);
-  create_swap_chain(window);
+  create_swap_chain();
   create_image_views();
   create_render_pass();
   create_graphics_pipeline();
   create_frame_buffers();
   create_command_pool();
-  create_command_buffer();
+  create_command_buffers();
   create_sync_objects();
 
   while !ReactorWindow.is_close_requested(window) {
@@ -82,59 +93,55 @@ main :: () {
 
     draw_frame();
     // // Handle Resize
-    // for get_window_resizes() {
-    //   if it.window == window {
-    //     should_reinit := (it.width != window_width) || (it.height != window_height);
+    for get_window_resizes() {
+      if it.window == window.window_pointer {
+        should_reinit := (it.width != xx window.width) || (it.height != xx window.height);
         
-    //     window_width  = it.width;
-    //     window_height = it.height;
-
-    //     if should_reinit {
-    //       print("%,%,%\n", should_reinit, window_width, window_height);
-    //       reinit_swapchain();
-    //     }
-    //   }
-    // }
+        ReactorWindow.resize_window(*window, xx it.width, xx it.height);
+        
+        if should_reinit {
+          window_changed_sizes = true; // Reinit swapchain.
+          print("Explict Resize\n");
+        }
+      }
+    }
   }
 
   // Wait for the device to be idle
-  vkDeviceWaitIdle(logical_device);
+  vkDeviceWaitIdle(device);
 
   cleanup(vk_instance);
 }
 
 cleanup :: (instance : VkInstance) {
   // Destroy our semaphores and fence
-  vkDestroySemaphore(logical_device, image_available_semaphore, null);
-  vkDestroySemaphore(logical_device, render_finished_semaphore, null);
-  vkDestroyFence(logical_device, in_flight_fence, null);
+  for 0 .. (MAX_FRAMES_IN_FLIGHT - 1) {
+    vkDestroySemaphore(device, image_available_semaphores[it], null);
+    vkDestroySemaphore(device, render_finished_semaphores[it], null);
+    vkDestroyFence(device, in_flight_fences[it], null);
+  }
+
+  // Free our arrays
+  // free(command_buffers.data);
+  // free(image_available_semaphores.data);
+  // free(render_finished_semaphores.data);
+  // free(in_flight_fences.data);
 
   // Destoroy our Command Pool
-  vkDestroyCommandPool(logical_device, command_pool, null);
-  // Destory our framebuffers
-  for swap_chain_frame_buffers {
-    vkDestroyFramebuffer(logical_device, it, null);
-  }
+  vkDestroyCommandPool(device, command_pool, null);
+  
+  // Cleanup our swapchain
+  cleanup_swap_chain();
+
   // Destory our Pipeline
-  vkDestroyPipeline(logical_device, graphics_pipeline, null);
+  vkDestroyPipeline(device, graphics_pipeline, null);
   // Destroy our PipelineLayout
-  vkDestroyPipelineLayout(logical_device, pipeline_layout, null);
+  vkDestroyPipelineLayout(device, pipeline_layout, null);
   // Destroy our Render Pass
-  vkDestroyRenderPass(logical_device, render_pass, null);
-
-  // Destroy our Image views
-  for swap_chain_image_views {
-    vkDestroyImageView(logical_device, it, null);
-  }
-
-  // Free our images
-  free(swap_chain_images.data);
-
-  // Destroy our Swapchain
-  vkDestroySwapchainKHR(logical_device, swap_chain, null);
+  vkDestroyRenderPass(device, render_pass, null);
 
   // Destroy our Logical Device.
-  vkDestroyDevice(logical_device, null);
+  vkDestroyDevice(device, null);
 
   if validation_layers_enabled {
     // Cleanup our debug messenger.
@@ -402,7 +409,7 @@ query_swap_chain_support_details :: (device : VkPhysicalDevice, surface : VkSurf
   return details;
 }
 
-create_swap_chain :: (window : ReactorWindow.ReactorWindow) {
+create_swap_chain :: () {
   swap_chain_support := query_swap_chain_support_details(physical_device, surface);
 
   surface_format := choose_swap_surface_format(swap_chain_support.formats);
@@ -451,7 +458,7 @@ create_swap_chain :: (window : ReactorWindow.ReactorWindow) {
 
   create_info.oldSwapchain = VK_NULL_HANDLE; // TODO Rebuild the swapchiain in the future
 
-  if vkCreateSwapchainKHR(logical_device, *create_info, null, *swap_chain) != .VK_SUCCESS {
+  if vkCreateSwapchainKHR(device, *create_info, null, *swap_chain) != .VK_SUCCESS {
     print("failed to create swap chain!\n");
   } else {
     print("Created swap chain!\n");
@@ -459,13 +466,41 @@ create_swap_chain :: (window : ReactorWindow.ReactorWindow) {
 
   // Resize and Populate our swap_chain_images buffer
   swap_chain_image_count : u32;
-  vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, null);
+  vkGetSwapchainImagesKHR(device, swap_chain, *swap_chain_image_count, null);
   swap_chain_images = NewArray(swap_chain_image_count, VkImage);
-  vkGetSwapchainImagesKHR(logical_device, swap_chain, *swap_chain_image_count, swap_chain_images.data);
+  vkGetSwapchainImagesKHR(device, swap_chain, *swap_chain_image_count, swap_chain_images.data);
 
   // Store the format and extent we are using in this swap_chain.
   swap_chain_image_format = surface_format.format;
   swap_chain_extent = extent;
+}
+
+cleanup_swap_chain :: () {
+  // Destory our framebuffers
+  for swap_chain_frame_buffers {
+    vkDestroyFramebuffer(device, it, null);
+  }
+
+  // Destroy our Image views
+  for swap_chain_image_views {
+    vkDestroyImageView(device, it, null);
+  }
+
+  // Free our images
+  free(swap_chain_images.data);
+
+  // Destroy our Swapchain
+  vkDestroySwapchainKHR(device, swap_chain, null);
+}
+
+recreate_swap_chain :: () {
+  vkDeviceWaitIdle(device);
+
+  cleanup_swap_chain();
+
+  create_swap_chain();
+  create_image_views();
+  create_frame_buffers();
 }
 
 choose_swap_surface_format :: (available_formats : [] VkSurfaceFormatKHR) -> VkSurfaceFormatKHR {
@@ -527,7 +562,7 @@ create_image_views :: () {
     create_info.subresourceRange.baseArrayLayer = 0;
     create_info.subresourceRange.layerCount = 1;
 
-    if vkCreateImageView(logical_device, *create_info, null, *swap_chain_image_views[index]) != .VK_SUCCESS {
+    if vkCreateImageView(device, *create_info, null, *swap_chain_image_views[index]) != .VK_SUCCESS {
       print("failed to create image views!\n");
     } else {
       print("created image view!\n");
@@ -578,12 +613,12 @@ create_logical_device :: (intsance : VkInstance, physical_device : VkPhysicalDev
     create_info.enabledLayerCount = 0;
   }
 
-  if vkCreateDevice(physical_device, *create_info, null, *logical_device) != .VK_SUCCESS {
+  if vkCreateDevice(physical_device, *create_info, null, *device) != .VK_SUCCESS {
     print("failed to create logical device!\n");
   }
 
-  vkGetDeviceQueue(logical_device, indices.graphics_family.value, 0, *graphics_queue);
-  vkGetDeviceQueue(logical_device, indices.present_family.value, 0, *present_queue);
+  vkGetDeviceQueue(device, indices.graphics_family.value, 0, *graphics_queue);
+  vkGetDeviceQueue(device, indices.present_family.value, 0, *present_queue);
 }
 
 populate_debug_messenger_create_info :: (p_create_info : *VkDebugUtilsMessengerCreateInfoEXT) {
@@ -713,7 +748,7 @@ create_render_pass :: () {
   render_pass_info.dependencyCount = 1;
   render_pass_info.pDependencies = *dependency;
 
-  if vkCreateRenderPass(logical_device , *render_pass_info, null, *render_pass) != .VK_SUCCESS {
+  if vkCreateRenderPass(device , *render_pass_info, null, *render_pass) != .VK_SUCCESS {
     print("failed to create render pass!\n");
   } else {
     print("created render pass!\n");
@@ -849,7 +884,7 @@ create_graphics_pipeline :: () {
   pipeline_layout_info.pushConstantRangeCount = 0;
   pipeline_layout_info.pPushConstantRanges = null;
 
-  if vkCreatePipelineLayout(logical_device , *pipeline_layout_info, null, *pipeline_layout) != .VK_SUCCESS {
+  if vkCreatePipelineLayout(device , *pipeline_layout_info, null, *pipeline_layout) != .VK_SUCCESS {
     print("failed to create pipeline layout!\n");
   } else {
     print("created pipeline layout!\n");
@@ -887,7 +922,7 @@ create_graphics_pipeline :: () {
   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
   pipeline_info.basePipelineIndex = -1;
 
-  if vkCreateGraphicsPipelines(logical_device, VK_NULL_HANDLE, 1, *pipeline_info, null, *graphics_pipeline) != .VK_SUCCESS {
+  if vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, *pipeline_info, null, *graphics_pipeline) != .VK_SUCCESS {
     print("failed to create graphics pipeline!\n");
   } else {
     print("created graphics pipeline!\n");
@@ -895,8 +930,8 @@ create_graphics_pipeline :: () {
 
 
   // Destroy our shaders
-  vkDestroyShaderModule(logical_device, vert_shader_module, null);
-  vkDestroyShaderModule(logical_device, frag_shader_module, null);
+  vkDestroyShaderModule(device, vert_shader_module, null);
+  vkDestroyShaderModule(device, frag_shader_module, null);
 
   // Free our files
   free(vert_source);
@@ -921,7 +956,7 @@ create_frame_buffers :: () {
     frame_buffer_info.height = swap_chain_extent.height;
     frame_buffer_info.layers = 1;
 
-    if vkCreateFramebuffer(logical_device, *frame_buffer_info, null, *swap_chain_frame_buffers[index]) != .VK_SUCCESS{
+    if vkCreateFramebuffer(device, *frame_buffer_info, null, *swap_chain_frame_buffers[index]) != .VK_SUCCESS{
       print("failed to create framebuffer!\n");
     } else {
       print("created framebuffer!\n");
@@ -938,7 +973,7 @@ create_command_pool :: () {
   pool_info.flags = .VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; //VK_COMMAND_POOL_CREATE_TRANSIENT_BIT command buffer changes frequently.
   pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value;
 
-  if vkCreateCommandPool(logical_device , *pool_info, null, *command_pool) != .VK_SUCCESS {
+  if vkCreateCommandPool(device , *pool_info, null, *command_pool) != .VK_SUCCESS {
     print("failed to create command pool!\n");
   } else {
     print("Created command pool!\n");
@@ -946,18 +981,19 @@ create_command_pool :: () {
 }
 
 // Create Command Buffer
-create_command_buffer :: () {
+create_command_buffers :: () {
   alloc_info : VkCommandBufferAllocateInfo;
   alloc_info.sType = .VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.commandPool = command_pool;
   alloc_info.level = .VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
   /**
     VK_COMMAND_BUFFER_LEVEL_PRIMARY: Can be submitted to a queue for execution, but cannot be called from other command buffers.
     VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from primary command buffers.
   */
-  alloc_info.commandBufferCount = 1;
+  
 
-  if vkAllocateCommandBuffers(logical_device, *alloc_info, *command_buffer) != .VK_SUCCESS {
+  if vkAllocateCommandBuffers(device, *alloc_info, command_buffers.data) != .VK_SUCCESS {
     print("failed to allocate command buffers!\n");
   } else {
     print("allocated command buffers!\n");
@@ -1027,49 +1063,72 @@ create_sync_objects :: () {
   fence_info.sType = .VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fence_info.flags = .VK_FENCE_CREATE_SIGNALED_BIT; // Create this fence in the signaled state to not block forever on first frame.
 
-  if vkCreateSemaphore(logical_device, *semaphore_info, null, *image_available_semaphore) != .VK_SUCCESS ||
-     vkCreateSemaphore(logical_device, *semaphore_info, null, *render_finished_semaphore) != .VK_SUCCESS ||
-     vkCreateFence(logical_device, *fence_info, null, *in_flight_fence) != .VK_SUCCESS {
-    print("failed to create semaphores!\n");
-  } else {
-    print("created semaphores!\n");
+  for 0 .. (MAX_FRAMES_IN_FLIGHT - 1) {
+    if vkCreateSemaphore(device, *semaphore_info, null, *image_available_semaphores[it]) != .VK_SUCCESS ||
+      vkCreateSemaphore(device, *semaphore_info, null, *render_finished_semaphores[it]) != .VK_SUCCESS ||
+      vkCreateFence(device, *fence_info, null, *in_flight_fences[it]) != .VK_SUCCESS {
+      print("failed to create semaphores!\n");
+    } else {
+      print("created semaphores!\n");
+    }
   }
 
 }
 
 draw_frame :: () {
+
   // Wait for previous frame to finish
-  vkWaitForFences(logical_device, 1, *in_flight_fence, VK_TRUE, U64_MAX);
-  vkResetFences(logical_device, 1, *in_flight_fence);
+  vkWaitForFences(device, 1, *in_flight_fences[frame_index], VK_TRUE, U64_MAX);
 
   // Acquire and image from the swap chain
   image_index : u32;
-  vkAcquireNextImageKHR(logical_device, swap_chain, U64_MAX, image_available_semaphore, VK_NULL_HANDLE, *image_index);
+  result := vkAcquireNextImageKHR(device, swap_chain, U64_MAX, image_available_semaphores[frame_index], VK_NULL_HANDLE, *image_index);
 
+  // Check if the driver did not detect the .VK_ERROR_OUT_OF_DATE_KHR but we did resize.
+  if result == .VK_SUCCESS && window_changed_sizes {
+    window_changed_sizes = false;
+    result = .VK_ERROR_OUT_OF_DATE_KHR;
+  }
+
+  if result == {
+    case .SUCCESS;
+      // Succeded
+    case .VK_ERROR_OUT_OF_DATE_KHR; #through; 
+    case .VK_SUBOPTIMAL_KHR;
+      print("Recreated swap cahin\n");
+      recreate_swap_chain();
+      return;
+    case; // Unhandled error.
+      print("failed to acquire swap chain image!\n");
+  }
+
+  // Only reset the fence if we are submitting work. // Errors which cause the swapchain to be regenerated will return before this.
+  vkResetFences(device, 1, *in_flight_fences[frame_index]);
+  
   // Record a command buffer which draws the scene onto that image
-  vkResetCommandBuffer(command_buffer, 0); //VkCommandBufferResetFlagBits
-  record_command_buffer(command_buffer, image_index); // the index comes from vkAcquireNextImageKHR
+  vkResetCommandBuffer(command_buffers[frame_index], 0); //VkCommandBufferResetFlagBits
+  record_command_buffer(command_buffers[frame_index], image_index); // the index comes from vkAcquireNextImageKHR
 
   // Submit the recorded command buffer
   submit_info : VkSubmitInfo;
   submit_info.sType = .VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
   wait_semaphores : [1] VkSemaphore;
-  wait_semaphores[0] = image_available_semaphore; // TODO: replace with Vector or dynamic array.
+  wait_semaphores[0] = image_available_semaphores[frame_index]; // TODO: replace with Vector or dynamic array.
   wait_stages := VkPipelineStageFlags.[.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT]; // Wait on the color attachment being output
   submit_info.waitSemaphoreCount = 1;
   submit_info.pWaitSemaphores = wait_semaphores.data;
   submit_info.pWaitDstStageMask = wait_stages.data;
   submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = *command_buffer;
+  submit_info.pCommandBuffers = *command_buffers[frame_index];
 
   signal_semaphores : [1] VkSemaphore;
-  signal_semaphores[0] = render_finished_semaphore;
+  signal_semaphores[0] = render_finished_semaphores[frame_index];
   submit_info.signalSemaphoreCount = 1;
   submit_info.pSignalSemaphores = signal_semaphores.data;
 
   // Submit queue
-  if vkQueueSubmit(graphics_queue, 1, *submit_info, in_flight_fence) != .VK_SUCCESS {
+  if vkQueueSubmit(graphics_queue, 1, *submit_info, in_flight_fences[frame_index]) != .VK_SUCCESS {
     print("failed to submit draw command buffer!");
   }
 
@@ -1087,8 +1146,10 @@ draw_frame :: () {
   present_info.pResults = null; // Check if presentation was successful or not.
 
   // Present the presentation_queue
-  vkQueuePresentKHR(present_queue, *present_info);
+  result = vkQueuePresentKHR(present_queue, *present_info);
 
+  // Advance frame_index
+  frame_index = (frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 create_shader_module :: ( source : string) -> bool, VkShaderModule {
@@ -1099,7 +1160,7 @@ create_shader_module :: ( source : string) -> bool, VkShaderModule {
   create_info.pCode = cast(*u32)*source[0];
 
   shader_module : VkShaderModule;
-  if vkCreateShaderModule(logical_device, *create_info, null, *shader_module) != .VK_SUCCESS {
+  if vkCreateShaderModule(device, *create_info, null, *shader_module) != .VK_SUCCESS {
     print("failed to create shader module!\n");
     return false, null;
   }
