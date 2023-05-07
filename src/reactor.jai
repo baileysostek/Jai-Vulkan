@@ -5,6 +5,8 @@
 ReactorWindow :: #import,file "window.jai";
 ShaderManager :: #import,file "shader_manager.jai";
 
+#import,file "mesh/mesh.jai";
+
 #import "Basic";
 #import "Vulkan";
 #import "String";
@@ -66,7 +68,19 @@ image_available_semaphores  : [MAX_FRAMES_IN_FLIGHT] VkSemaphore;
 render_finished_semaphores  : [MAX_FRAMES_IN_FLIGHT] VkSemaphore;
 in_flight_fences            : [MAX_FRAMES_IN_FLIGHT] VkFence;
 
+// Vertex Buffer info
+vertex_buffer : VkBuffer;
+vertex_buffer_memory : VkDeviceMemory;
+
+// Meshes
+first_mesh : Mesh;
+
 main :: () {
+  // Mesh?
+  first_mesh = load_mesh();
+  get_binding_description();
+  get_attribute_descriptions();
+
   // First we create a window.
   window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
 
@@ -85,6 +99,7 @@ main :: () {
   create_graphics_pipeline();
   create_frame_buffers();
   create_command_pool();
+  create_vertex_buffer();
   create_command_buffers();
   create_sync_objects();
 
@@ -113,6 +128,20 @@ main :: () {
   cleanup(vk_instance);
 }
 
+find_memory_type :: (type_filter: u32, properties : VkMemoryPropertyFlags) -> u32 {
+  mem_properties : VkPhysicalDeviceMemoryProperties;
+  vkGetPhysicalDeviceMemoryProperties(physical_device, *mem_properties);
+
+  for 0 .. mem_properties.memoryTypeCount - 1 {
+    if (type_filter & (1 << it)) && (mem_properties.memoryTypes[it].propertyFlags & properties) == properties {
+      return it;
+    }
+  }
+
+  print("failed to find suitable memory type!");
+  return U32_MAX;
+}
+
 cleanup :: (instance : VkInstance) {
   // Destroy our semaphores and fence
   for 0 .. (MAX_FRAMES_IN_FLIGHT - 1) {
@@ -132,6 +161,9 @@ cleanup :: (instance : VkInstance) {
   
   // Cleanup our swapchain
   cleanup_swap_chain();
+
+  vkDestroyBuffer(device, vertex_buffer, null);
+  vkFreeMemory(device, vertex_buffer_memory, null);
 
   // Destory our Pipeline
   vkDestroyPipeline(device, graphics_pipeline, null);
@@ -783,11 +815,14 @@ create_graphics_pipeline :: () {
   shader_stages[1] = fragment_shader_stage_info;
 
   vertex_input_info : VkPipelineVertexInputStateCreateInfo;
-  vertex_input_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  
-  vertex_input_info.vertexBindingDescriptionCount = 0;
-  vertex_input_info.pVertexBindingDescriptions = null;
-  vertex_input_info.vertexAttributeDescriptionCount = 0;
-  vertex_input_info.pVertexAttributeDescriptions = null;
+  vertex_input_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  // Get data about our vertices from the Mesh class.
+  binding_description := get_binding_description();
+  vertex_input_info.vertexBindingDescriptionCount = 1;
+  vertex_input_info.pVertexBindingDescriptions = *binding_description;
+  attribute_descriptions := get_attribute_descriptions();
+  vertex_input_info.vertexAttributeDescriptionCount = attribute_descriptions.count;
+  vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions.data;
 
   // Input Assembly // How vertices should be assembled.
   input_assembly : VkPipelineInputAssemblyStateCreateInfo;
@@ -980,6 +1015,43 @@ create_command_pool :: () {
   }
 }
 
+// Create our vertex buffer
+create_vertex_buffer :: () {
+  buffer_info : VkBufferCreateInfo;
+  buffer_info.sType = .VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buffer_info.size = xx (size_of(Vertex) * first_mesh.vertices.count);
+  buffer_info.usage = .VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  buffer_info.sharingMode = .VK_SHARING_MODE_EXCLUSIVE;
+
+  if vkCreateBuffer(device, *buffer_info, null, *vertex_buffer) != .VK_SUCCESS {
+    print("failed to create vertex buffer!\n");
+  } else {
+    print("created vertex buffer!\n");
+  }
+
+  mem_requirements : VkMemoryRequirements;
+  vkGetBufferMemoryRequirements(device, vertex_buffer, *mem_requirements);
+
+  alloc_info : VkMemoryAllocateInfo;
+  alloc_info.sType = .VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  alloc_info.allocationSize = mem_requirements.size;
+  alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, VkMemoryPropertyFlagBits.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | .VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+  if vkAllocateMemory(device, *alloc_info, null, *vertex_buffer_memory) != .VK_SUCCESS {
+    print("failed to allocate vertex buffer memory!");
+    return;
+  } else {
+    print("allocated vertex buffer memory!");
+  }
+
+  vkBindBufferMemory(device, vertex_buffer, vertex_buffer_memory, 0);
+
+  data : *void;
+  vkMapMemory(device, vertex_buffer_memory, 0, buffer_info.size, 0, *data);
+  memcpy(data, first_mesh.vertices.data, xx buffer_info.size);
+  vkUnmapMemory(device, vertex_buffer_memory);
+}
+
 // Create Command Buffer
 create_command_buffers :: () {
   alloc_info : VkCommandBufferAllocateInfo;
@@ -1027,6 +1099,7 @@ record_command_buffer :: (command_buffer : VkCommandBuffer, image_index : u32) {
   vkCmdBeginRenderPass(command_buffer, *render_pass_info, .VK_SUBPASS_CONTENTS_INLINE); // Primary vs Secondary Command buffer.
   // Bind the Graphics Pipeline
   vkCmdBindPipeline(command_buffer, .VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+
   viewport : VkViewport;
   viewport.x = 0.0;
   viewport.y = 0.0;
@@ -1040,6 +1113,11 @@ record_command_buffer :: (command_buffer : VkCommandBuffer, image_index : u32) {
   scissor.offset = .{0, 0};
   scissor.extent = swap_chain_extent;
   vkCmdSetScissor(command_buffer, 0, 1, *scissor);
+
+  vertex_buffers : [1]VkBuffer; // TODO Dynamic?
+  vertex_buffers[0] = vertex_buffer;
+  offsets := VkDeviceSize.[0];
+  vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers.data, offsets.data);
 
   vkCmdDraw(command_buffer, 3, 1, 0, 0); // Draw call??
   /**
@@ -1105,7 +1183,6 @@ draw_frame :: () {
   // Only reset the fence if we are submitting work. // Errors which cause the swapchain to be regenerated will return before this.
   vkResetFences(device, 1, *in_flight_fences[frame_index]);
   
-  // Record a command buffer which draws the scene onto that image
   vkResetCommandBuffer(command_buffers[frame_index], 0); //VkCommandBufferResetFlagBits
   record_command_buffer(command_buffers[frame_index], image_index); // the index comes from vkAcquireNextImageKHR
 
