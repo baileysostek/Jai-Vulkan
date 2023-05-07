@@ -18,24 +18,31 @@ ReactorWindow :: struct {
   fullscreen := false;
 
   quit := false;
+
+  save_info : WindowCreation.Saved_Window_Info;
 }
 
 create_window :: (window_name := "Window Title", window_width : u32 = 640, window_height : u32 = 480, fullscreen : bool = false) -> ReactorWindow {
   // Use Window create to create this window on the screen.
     // Create window
   window_pointer := WindowCreation.create_window(xx window_width, xx window_height, window_name, window_x = 100, window_y = 100);
-  window := ReactorWindow.{window_pointer, window_name, window_width, window_height, cast(float)window_width / cast(float)window_height, false, false, false};
+  window := ReactorWindow.{window_pointer, window_name, window_width, window_height, cast(float)window_width / cast(float)window_height, false, fullscreen, false, .{}};
 
-  if !fullscreen {
-    // Center the monitor on the screen.
-    center_window_on_monitor(window);
-  } else {
+  // Center the monitor on the screen.
+  center_window_on_monitor(window);
+
+  if window.fullscreen {
     // Create fullscreen window.
     window_info : WindowCreation.Saved_Window_Info;
     WindowCreation.toggle_fullscreen(window_pointer, true, *window_info);
   }
 
   return window;
+}
+
+toggle_fullscreen :: (window : *ReactorWindow) {
+  window.fullscreen = !window.fullscreen;
+  WindowCreation.toggle_fullscreen(window.window_pointer, window.fullscreen, *window.save_info);
 }
 
 poll_window_events :: (window : *ReactorWindow){
@@ -46,6 +53,8 @@ poll_window_events :: (window : *ReactorWindow){
   for events_this_frame {
     if it.type == .QUIT then window.quit = true;
     if it.type == .KEYBOARD && it.key_code == .ESCAPE then window.quit = true;
+
+    if it.type == .KEYBOARD && it.key_code == .F11 && it.key_pressed == 1 then toggle_fullscreen(window);
 
     print("%\n", it);
   }

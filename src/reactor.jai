@@ -6,6 +6,7 @@ ReactorWindow :: #import,file "window.jai";
 ShaderManager :: #import,file "shader_manager.jai";
 
 #import,file "mesh/mesh.jai";
+#import,file "entity/entity.jai";
 
 #import "Basic";
 #import "Vulkan";
@@ -50,6 +51,13 @@ swap_chain_frame_buffers : [] VkFramebuffer;
 
 // Graphics Pipeline
 render_pass : VkRenderPass;
+// Uniforms / UBO
+UBO_MVP :: struct {
+  model : Matrix4;
+  view : Matrix4;
+  projection : Matrix4;
+}
+descriptor_set_layout : VkDescriptorSetLayout;
 pipeline_layout : VkPipelineLayout;
 graphics_pipeline : VkPipeline;
 
@@ -74,6 +82,14 @@ vertex_buffer_memory : VkDeviceMemory;
 index_buffer : VkBuffer;
 index_buffer_memory : VkDeviceMemory;
 
+// UBO data.
+uniform_buffers         : [MAX_FRAMES_IN_FLIGHT] VkBuffer;
+uniform_buffers_memory  : [MAX_FRAMES_IN_FLIGHT] VkDeviceMemory;
+uniform_buffers_mapped  : [MAX_FRAMES_IN_FLIGHT] *void;
+
+descriptor_pool : VkDescriptorPool;
+descriptor_sets : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSet;
+
 // Meshes
 first_mesh : Mesh;
 
@@ -84,7 +100,7 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window := ReactorWindow.create_window(window_name = "Hello Vulkan!", fullscreen = true);
+  window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
@@ -98,18 +114,42 @@ main :: () {
   create_swap_chain();
   create_image_views();
   create_render_pass();
+  create_descriptor_set_layout(); // Layout locations of Attributes.
   create_graphics_pipeline();
   create_frame_buffers();
   create_command_pool();
   create_vertex_buffer();
   create_index_buffer();
+  create_uniform_buffers(); // Layout locations of Uniforms.
+  create_descriptor_pool();
+  create_descriptor_sets();
   create_command_buffers();
   create_sync_objects();
 
+  // Compute Frame times.
+  last_update_time := current_time_monotonic();
+  running_delta : float = 0.0;
+  frames : u32 = 0;
+
   while !ReactorWindow.is_close_requested(window) {
+
+    // Compute frame times
+    now := current_time_monotonic();
+
+    delta := now - last_update_time;
+    ns := to_nanoseconds(delta);
+    delta_time : float64 = (ns / 1_000_000_000.0);
+    running_delta += ns;
+
+    if running_delta >= 1_000_000_000 { // We know a second has passed
+      running_delta -= 1_000_000_000;
+      print("fps:%,%\n", frames, delta_time);
+      frames = 0;
+    }
+
     ReactorWindow.poll_window_events(*window);
 
-    draw_frame();
+    draw_frame(delta_time);
     // // Handle Resize
     for get_window_resizes() {
       if it.window == window.window_pointer {
@@ -123,6 +163,10 @@ main :: () {
         }
       }
     }
+
+    // set the last frame time.
+    last_update_time = now;
+    frames += 1;
   }
 
   // Wait for the device to be idle
@@ -146,24 +190,21 @@ find_memory_type :: (type_filter: u32, properties : VkMemoryPropertyFlags) -> u3
 }
 
 cleanup :: (instance : VkInstance) {
-  // Destroy our semaphores and fence
-  for 0 .. (MAX_FRAMES_IN_FLIGHT - 1) {
-    vkDestroySemaphore(device, image_available_semaphores[it], null);
-    vkDestroySemaphore(device, render_finished_semaphores[it], null);
-    vkDestroyFence(device, in_flight_fences[it], null);
-  }
-
-  // Free our arrays
-  // free(command_buffers.data);
-  // free(image_available_semaphores.data);
-  // free(render_finished_semaphores.data);
-  // free(in_flight_fences.data);
-
-  // Destoroy our Command Pool
-  vkDestroyCommandPool(device, command_pool, null);
-  
   // Cleanup our swapchain
   cleanup_swap_chain();
+
+  vkDestroyPipeline(device, graphics_pipeline, null);
+  vkDestroyPipelineLayout(device, pipeline_layout, null);
+  vkDestroyRenderPass(device, render_pass, null);
+
+  for 0 .. MAX_FRAMES_IN_FLIGHT - 1 {
+    vkDestroyBuffer(device, uniform_buffers[it], null);
+    vkFreeMemory(device, uniform_buffers_memory[it], null);
+  }
+
+  vkDestroyDescriptorPool(device, descriptor_pool, null);
+
+  vkDestroyDescriptorSetLayout(device, descriptor_set_layout, null);
 
   vkDestroyBuffer(device, index_buffer, null);
   vkFreeMemory(device, index_buffer_memory, null);
@@ -171,12 +212,15 @@ cleanup :: (instance : VkInstance) {
   vkDestroyBuffer(device, vertex_buffer, null);
   vkFreeMemory(device, vertex_buffer_memory, null);
 
-  // Destory our Pipeline
-  vkDestroyPipeline(device, graphics_pipeline, null);
-  // Destroy our PipelineLayout
-  vkDestroyPipelineLayout(device, pipeline_layout, null);
-  // Destroy our Render Pass
-  vkDestroyRenderPass(device, render_pass, null);
+  // Destroy our semaphores and fence
+  for 0 .. (MAX_FRAMES_IN_FLIGHT - 1) {
+    vkDestroySemaphore(device, image_available_semaphores[it], null);
+    vkDestroySemaphore(device, render_finished_semaphores[it], null);
+    vkDestroyFence(device, in_flight_fences[it], null);
+  }
+  
+  // Destoroy our Command Pool
+  vkDestroyCommandPool(device, command_pool, null);
 
   // Destroy our Logical Device.
   vkDestroyDevice(device, null);
@@ -671,7 +715,7 @@ debug_callback :: (messageSeverity: VkDebugUtilsMessageSeverityFlagBitsEXT, mess
   new_context: Context;
   push_context new_context {
     if messageSeverity > .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT { 
-      print("validation layer:%\n", to_string(pCallbackData.pMessage));
+      // print("validation layer:%\n", to_string(pCallbackData.pMessage));
     }
   }
   return VK_FALSE;
@@ -791,6 +835,28 @@ create_render_pass :: () {
   } else {
     print("created render pass!\n");
   }
+}
+
+// Create our UBO layout stuff
+create_descriptor_set_layout :: () {
+  ubo_layout_binding : VkDescriptorSetLayoutBinding;
+  ubo_layout_binding.binding = 0;
+  ubo_layout_binding.descriptorType = .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  ubo_layout_binding.descriptorCount = 1;
+  ubo_layout_binding.stageFlags = .VK_SHADER_STAGE_VERTEX_BIT; // VK_SHADER_STAGE_ALL_GRAPHICS
+  ubo_layout_binding.pImmutableSamplers = null;
+
+  layout_info : VkDescriptorSetLayoutCreateInfo;
+  layout_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = *ubo_layout_binding;
+
+  if vkCreateDescriptorSetLayout(device, *layout_info, null, *descriptor_set_layout) != .VK_SUCCESS {
+    print("failed to create descriptor set layout!\n");
+  } else {
+    print("created descriptor set layout!\n");
+  }
+
 }
 
 // Create our Graphics Pipeline
@@ -920,8 +986,8 @@ create_graphics_pipeline :: () {
   // create the popeline
   pipeline_layout_info : VkPipelineLayoutCreateInfo;
   pipeline_layout_info.sType = .VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pipeline_layout_info.setLayoutCount = 0;
-  pipeline_layout_info.pSetLayouts = null;
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = *descriptor_set_layout;
   pipeline_layout_info.pushConstantRangeCount = 0;
   pipeline_layout_info.pPushConstantRanges = null;
 
@@ -945,7 +1011,7 @@ create_graphics_pipeline :: () {
   pipeline_info.sType = .VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   // Reference Fixed Function Stages
   pipeline_info.stageCount = 2;
-  pipeline_info.pStages = shader_stages.data; // ERROR MAYBE??
+  pipeline_info.pStages = shader_stages.data;
   pipeline_info.pVertexInputState = *vertex_input_info;
   pipeline_info.pInputAssemblyState = *input_assembly;
   pipeline_info.pViewportState = *viewport_state;
@@ -1097,10 +1163,10 @@ create_buffer :: (size : VkDeviceSize, usage : VkBufferUsageFlags , properties :
   alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, properties);
 
   if vkAllocateMemory(device, *alloc_info, null, buffer_memory) != .VK_SUCCESS {
-    print("failed to allocate buffer memory!");
+    print("failed to allocate buffer memory!\n");
     return;
   } else {
-    print("allocated buffer memory!");
+    print("allocated buffer memory!\n");
   }
 
   vkBindBufferMemory(device, << buffer, << buffer_memory, 0);
@@ -1123,6 +1189,69 @@ create_index_buffer :: () {
 
   vkDestroyBuffer(device, staging_buffer, null);
   vkFreeMemory(device, staging_buffer_memory, null);
+}
+
+create_uniform_buffers :: () {
+  buffer_size : VkDeviceSize = xx size_of(UBO_MVP);
+  //THIS COULD BE THE PROBLEM WHEN THIS DOES NOT WORK.
+  for 0 .. MAX_FRAMES_IN_FLIGHT - 1 {
+    create_buffer(buffer_size, .VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VkMemoryPropertyFlagBits.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | .VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, *uniform_buffers[it], *uniform_buffers_memory[it]);
+    vkMapMemory(device, uniform_buffers_memory[it], 0, buffer_size, 0, *uniform_buffers_mapped[it]);
+  } 
+}
+
+create_descriptor_pool :: () {
+  pool_size : VkDescriptorPoolSize;
+  pool_size.type = .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  pool_size.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+
+  pool_info : VkDescriptorPoolCreateInfo;
+  pool_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.poolSizeCount = 1;
+  pool_info.pPoolSizes = *pool_size;
+  pool_info.maxSets = MAX_FRAMES_IN_FLIGHT;
+
+  if vkCreateDescriptorPool(device, *pool_info, null, *descriptor_pool) != .VK_SUCCESS {
+    print("failed to create descriptor pool!\n");
+  } else {
+    print("created descriptor pool!\n");
+  }
+}
+
+create_descriptor_sets :: () {
+  layouts : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSetLayout;
+  alloc_info : VkDescriptorSetAllocateInfo ;
+  alloc_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  alloc_info.descriptorPool = descriptor_pool;
+  alloc_info.descriptorSetCount = layouts.count;
+  alloc_info.pSetLayouts = layouts.data;
+  
+  if vkAllocateDescriptorSets(device, *alloc_info, descriptor_sets.data) != .VK_SUCCESS {
+    print("failed to allocate descriptor sets!\n");
+  } else {
+    print("allocated descriptor sets!\n");
+  }
+
+  for 0 .. MAX_FRAMES_IN_FLIGHT - 1 {
+    buffer_info : VkDescriptorBufferInfo;
+    buffer_info.buffer = uniform_buffers[it];
+    buffer_info.offset = 0;
+    buffer_info.range = size_of(UBO_MVP);
+
+    descriptor_write : VkWriteDescriptorSet;
+    descriptor_write.sType = .VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptor_write.dstSet = descriptor_sets[it];
+    descriptor_write.dstBinding = 0;
+    descriptor_write.dstArrayElement = 0; // If we are using an array, the array index.
+    descriptor_write.descriptorType = .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_write.descriptorCount = 1;
+    descriptor_write.pBufferInfo = *buffer_info;
+    descriptor_write.pImageInfo = null;
+    descriptor_write.pTexelBufferView = null;
+
+    vkUpdateDescriptorSets(device, 1, *descriptor_write, 0, null);
+  }
+
 }
 
 // Create Command Buffer
@@ -1193,6 +1322,7 @@ record_command_buffer :: (command_buffer : VkCommandBuffer, image_index : u32) {
   vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers.data, offsets.data);
   vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, .VK_INDEX_TYPE_UINT32);
 
+  vkCmdBindDescriptorSets(command_buffer, .VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, *descriptor_sets[frame_index], 0, null);
   vkCmdDrawIndexed(command_buffer, first_mesh.index_count, 1, 0, 0, 0); // Draw call??
   /**
   commandBuffer   is the command buffer into which the command is recorded.
@@ -1227,7 +1357,7 @@ create_sync_objects :: () {
 
 }
 
-draw_frame :: () {
+draw_frame :: (delta_time : float64) {
 
   // Wait for previous frame to finish
   vkWaitForFences(device, 1, *in_flight_fences[frame_index], VK_TRUE, U64_MAX);
@@ -1253,6 +1383,8 @@ draw_frame :: () {
     case; // Unhandled error.
       print("failed to acquire swap chain image!\n");
   }
+
+  update_uniform_buffer(delta_time, frame_index);
 
   // Only reset the fence if we are submitting work. // Errors which cause the swapchain to be regenerated will return before this.
   vkResetFences(device, 1, *in_flight_fences[frame_index]);
@@ -1301,6 +1433,11 @@ draw_frame :: () {
 
   // Advance frame_index
   frame_index = (frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
+  ubo : UBO_MVP = .{.{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, .{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, .{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+  memcpy(uniform_buffers_mapped[current_image], *ubo, size_of(UBO_MVP));
 }
 
 create_shader_module :: ( source : string) -> bool, VkShaderModule {
