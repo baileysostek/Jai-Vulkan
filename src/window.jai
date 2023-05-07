@@ -20,14 +20,20 @@ ReactorWindow :: struct {
   quit := false;
 }
 
-create_window :: (window_name := "Window Title", window_width : u32 = 640, window_height : u32 = 480) -> ReactorWindow {
+create_window :: (window_name := "Window Title", window_width : u32 = 640, window_height : u32 = 480, fullscreen : bool = false) -> ReactorWindow {
   // Use Window create to create this window on the screen.
     // Create window
   window_pointer := WindowCreation.create_window(xx window_width, xx window_height, window_name, window_x = 100, window_y = 100);
   window := ReactorWindow.{window_pointer, window_name, window_width, window_height, cast(float)window_width / cast(float)window_height, false, false, false};
 
-  // Center the monitor on the screen.
-  center_window_on_monitor(window);
+  if !fullscreen {
+    // Center the monitor on the screen.
+    center_window_on_monitor(window);
+  } else {
+    // Create fullscreen window.
+    window_info : WindowCreation.Saved_Window_Info;
+    WindowCreation.toggle_fullscreen(window_pointer, true, *window_info);
+  }
 
   return window;
 }

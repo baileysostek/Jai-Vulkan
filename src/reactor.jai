@@ -71,6 +71,8 @@ in_flight_fences            : [MAX_FRAMES_IN_FLIGHT] VkFence;
 // Vertex Buffer info
 vertex_buffer : VkBuffer;
 vertex_buffer_memory : VkDeviceMemory;
+index_buffer : VkBuffer;
+index_buffer_memory : VkDeviceMemory;
 
 // Meshes
 first_mesh : Mesh;
@@ -82,7 +84,7 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
+  window := ReactorWindow.create_window(window_name = "Hello Vulkan!", fullscreen = true);
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
@@ -100,6 +102,7 @@ main :: () {
   create_frame_buffers();
   create_command_pool();
   create_vertex_buffer();
+  create_index_buffer();
   create_command_buffers();
   create_sync_objects();
 
@@ -161,6 +164,9 @@ cleanup :: (instance : VkInstance) {
   
   // Cleanup our swapchain
   cleanup_swap_chain();
+
+  vkDestroyBuffer(device, index_buffer, null);
+  vkFreeMemory(device, index_buffer_memory, null);
 
   vkDestroyBuffer(device, vertex_buffer, null);
   vkFreeMemory(device, vertex_buffer_memory, null);
@@ -1017,39 +1023,106 @@ create_command_pool :: () {
 
 // Create our vertex buffer
 create_vertex_buffer :: () {
+  buffer_size : VkDeviceSize = xx (size_of(Vertex) * first_mesh.vertex_count);
+
+  staging_buffer : VkBuffer;
+  staging_buffer_memory : VkDeviceMemory;
+  create_buffer(buffer_size, .VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VkMemoryPropertyFlagBits.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | .VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, *staging_buffer, *staging_buffer_memory);
+
+  data : *void;
+  vkMapMemory(device, staging_buffer_memory, 0, buffer_size, 0, *data);
+  memcpy(data, first_mesh.vertices.data, xx buffer_size);
+  vkUnmapMemory(device, staging_buffer_memory);
+
+  create_buffer(buffer_size, VkBufferUsageFlagBits.VK_BUFFER_USAGE_TRANSFER_DST_BIT | .VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, .VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, *vertex_buffer, *vertex_buffer_memory);
+  copy_buffer(staging_buffer, vertex_buffer, buffer_size);
+
+  vkDestroyBuffer(device, staging_buffer, null);
+  vkFreeMemory(device, staging_buffer_memory, null);
+}
+
+copy_buffer :: (src_buffer : VkBuffer , dst_buffer : VkBuffer, size : VkDeviceSize) {
+  alloc_info : VkCommandBufferAllocateInfo;
+  alloc_info.sType = .VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.level = .VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandPool = command_pool;
+  alloc_info.commandBufferCount = 1;
+
+  command_buffer : VkCommandBuffer;
+  vkAllocateCommandBuffers(device, *alloc_info, *command_buffer);
+
+  begin_info : VkCommandBufferBeginInfo;
+  begin_info.sType = .VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = .VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(command_buffer, *begin_info);
+
+  copy_region : VkBufferCopy;
+  copy_region.srcOffset = 0;
+  copy_region.dstOffset = 0;
+  copy_region.size = size;
+  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, *copy_region);
+  vkEndCommandBuffer(command_buffer);
+
+  submit_info : VkSubmitInfo;
+  submit_info.sType = .VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = *command_buffer;
+
+  vkQueueSubmit(graphics_queue, 1, *submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphics_queue);
+
+  vkFreeCommandBuffers(device, command_pool, 1, *command_buffer);
+}
+
+create_buffer :: (size : VkDeviceSize, usage : VkBufferUsageFlags , properties : VkMemoryPropertyFlagBits, buffer : *VkBuffer, buffer_memory : *VkDeviceMemory) {
   buffer_info : VkBufferCreateInfo;
   buffer_info.sType = .VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buffer_info.size = xx (size_of(Vertex) * first_mesh.vertices.count);
-  buffer_info.usage = .VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  buffer_info.size = size;
+  buffer_info.usage = usage;
   buffer_info.sharingMode = .VK_SHARING_MODE_EXCLUSIVE;
 
-  if vkCreateBuffer(device, *buffer_info, null, *vertex_buffer) != .VK_SUCCESS {
-    print("failed to create vertex buffer!\n");
+  if vkCreateBuffer(device, *buffer_info, null, buffer) != .VK_SUCCESS {
+    print("failed to create buffer!\n");
   } else {
-    print("created vertex buffer!\n");
+    print("created buffer!\n");
   }
 
   mem_requirements : VkMemoryRequirements;
-  vkGetBufferMemoryRequirements(device, vertex_buffer, *mem_requirements);
+  vkGetBufferMemoryRequirements(device, << buffer, *mem_requirements);
 
   alloc_info : VkMemoryAllocateInfo;
   alloc_info.sType = .VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
   alloc_info.allocationSize = mem_requirements.size;
-  alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, VkMemoryPropertyFlagBits.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | .VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  alloc_info.memoryTypeIndex = find_memory_type(mem_requirements.memoryTypeBits, properties);
 
-  if vkAllocateMemory(device, *alloc_info, null, *vertex_buffer_memory) != .VK_SUCCESS {
-    print("failed to allocate vertex buffer memory!");
+  if vkAllocateMemory(device, *alloc_info, null, buffer_memory) != .VK_SUCCESS {
+    print("failed to allocate buffer memory!");
     return;
   } else {
-    print("allocated vertex buffer memory!");
+    print("allocated buffer memory!");
   }
 
-  vkBindBufferMemory(device, vertex_buffer, vertex_buffer_memory, 0);
+  vkBindBufferMemory(device, << buffer, << buffer_memory, 0);
+}
+
+create_index_buffer :: () {
+  buffer_size : VkDeviceSize = xx (size_of(u32) * first_mesh.index_count);
+
+  staging_buffer : VkBuffer;
+  staging_buffer_memory : VkDeviceMemory;
+  create_buffer(buffer_size, .VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VkMemoryPropertyFlagBits.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | .VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, *staging_buffer, *staging_buffer_memory);
 
   data : *void;
-  vkMapMemory(device, vertex_buffer_memory, 0, buffer_info.size, 0, *data);
-  memcpy(data, first_mesh.vertices.data, xx buffer_info.size);
-  vkUnmapMemory(device, vertex_buffer_memory);
+  vkMapMemory(device, staging_buffer_memory, 0, buffer_size, 0, *data);
+  memcpy(data, first_mesh.indices.data, xx buffer_size);
+  vkUnmapMemory(device, staging_buffer_memory);
+
+  create_buffer(buffer_size, VkBufferUsageFlagBits.VK_BUFFER_USAGE_TRANSFER_DST_BIT | .VK_BUFFER_USAGE_INDEX_BUFFER_BIT, .VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, *index_buffer, *index_buffer_memory);
+  copy_buffer(staging_buffer, index_buffer, buffer_size);
+
+  vkDestroyBuffer(device, staging_buffer, null);
+  vkFreeMemory(device, staging_buffer_memory, null);
 }
 
 // Create Command Buffer
@@ -1118,8 +1191,9 @@ record_command_buffer :: (command_buffer : VkCommandBuffer, image_index : u32) {
   vertex_buffers[0] = vertex_buffer;
   offsets := VkDeviceSize.[0];
   vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers.data, offsets.data);
+  vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, .VK_INDEX_TYPE_UINT32);
 
-  vkCmdDraw(command_buffer, 3, 1, 0, 0); // Draw call??
+  vkCmdDrawIndexed(command_buffer, first_mesh.index_count, 1, 0, 0, 0); // Draw call??
   /**
   commandBuffer   is the command buffer into which the command is recorded.
   vertexCount     is the number of vertices to draw.
@@ -1173,7 +1247,7 @@ draw_frame :: () {
       // Succeded
     case .VK_ERROR_OUT_OF_DATE_KHR; #through; 
     case .VK_SUBOPTIMAL_KHR;
-      print("Recreated swap cahin\n");
+      print("Recreated swap chain!\n");
       recreate_swap_chain();
       return;
     case; // Unhandled error.

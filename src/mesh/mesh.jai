@@ -16,10 +16,13 @@ PrimitiveType :: enum u32 {
 }
 
 Mesh :: struct {
-  vertex_count : int;
-  vertices : []Vertex;
+  vertex_count : u32;
+  vertices : [] Vertex;
+  index_count : u32;
+  indices  : [] u32;
 
   // Optional?
+  primitive_type : PrimitiveType = .POINTS;
 }
 
 Vertex :: struct {
@@ -34,15 +37,20 @@ Vertex :: struct {
   // TODO bone weights and indices.
 }
 
+// Mesh Loader.
 load_mesh :: () -> Mesh {
   mesh : Mesh;
 
-  mesh.vertices = NewArray(3, Vertex);
-  mesh.vertices[0] = .{.{ 0.0, -0.5, 0.0}, .{1.0, 1.0, 1.0}};
-  mesh.vertices[1] = .{.{ 0.5,  0.5, 0.0}, .{0.0, 1.0, 0.0}};
-  mesh.vertices[2] = .{.{-0.5,  0.5, 0.0}, .{0.0, 0.0, 1.0}};
+  mesh.vertices = NewArray(4, Vertex);
+  mesh.vertices[0] = .{.{-0.5, -0.5, 0.0}, .{1.0, 0.0, 0.0}};
+  mesh.vertices[1] = .{.{ 0.5, -0.5, 0.0}, .{0.0, 1.0, 0.0}};
+  mesh.vertices[2] = .{.{ 0.5,  0.5, 0.0}, .{0.0, 0.0, 1.0}};
+  mesh.vertices[3] = .{.{-0.5,  0.5, 0.0}, .{1.0, 1.0, 1.0}};
+
+  mesh.indices = u32.[0, 1, 2, 2, 3, 0];
   
-  mesh.vertex_count = mesh.vertices.count;
+  mesh.vertex_count = xx mesh.vertices.count;
+  mesh.index_count = xx mesh.indices.count;
 
   return mesh;
 }
