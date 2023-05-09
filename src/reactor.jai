@@ -942,7 +942,7 @@ create_graphics_pipeline :: () {
   rasterizer.polygonMode = .VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0; // Bigger than this requires enabling WideLines
   rasterizer.cullMode = .VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = .VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.frontFace = .VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE; // Could this be used to help fix shadow Acne?
   rasterizer.depthBiasConstantFactor = 0.0;
   rasterizer.depthBiasClamp = 0.0;
@@ -1219,20 +1219,20 @@ create_descriptor_pool :: () {
 }
 
 create_descriptor_sets :: () {
-  layouts : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSetLayout;
-  alloc_info : VkDescriptorSetAllocateInfo ;
-  alloc_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  alloc_info.descriptorPool = descriptor_pool;
-  alloc_info.descriptorSetCount = layouts.count;
-  alloc_info.pSetLayouts = layouts.data;
-  
-  if vkAllocateDescriptorSets(device, *alloc_info, descriptor_sets.data) != .VK_SUCCESS {
-    print("failed to allocate descriptor sets!\n");
-  } else {
-    print("allocated descriptor sets!\n");
-  }
 
   for 0 .. MAX_FRAMES_IN_FLIGHT - 1 {
+    alloc_info : VkDescriptorSetAllocateInfo ;
+    alloc_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool = descriptor_pool;
+    alloc_info.descriptorSetCount = 1;
+    alloc_info.pSetLayouts = *descriptor_set_layout;
+  
+    if vkAllocateDescriptorSets(device, *alloc_info, *descriptor_sets[it]) != .VK_SUCCESS {
+      print("failed to allocate descriptor sets!\n");
+    } else {
+      print("allocated descriptor sets!\n");
+    }
+
     buffer_info : VkDescriptorBufferInfo;
     buffer_info.buffer = uniform_buffers[it];
     buffer_info.offset = 0;
