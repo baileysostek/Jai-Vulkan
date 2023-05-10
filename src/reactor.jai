@@ -4,6 +4,7 @@
 
 ReactorWindow :: #import,file "window.jai";
 ShaderManager :: #import,file "shader_manager.jai";
+CameraManager :: #import,file "camera/camera_manager.jai";
 
 #import,file "mesh/mesh.jai";
 #import,file "entity/entity.jai";
@@ -53,9 +54,9 @@ swap_chain_frame_buffers : [] VkFramebuffer;
 render_pass : VkRenderPass;
 // Uniforms / UBO
 UBO_MVP :: struct {
-  model : Matrix4;
-  view : Matrix4;
-  projection : Matrix4;
+  model      : Matrix4 = Matrix4_Identity;
+  view       : Matrix4 = Matrix4_Identity;
+  projection : Matrix4 = Matrix4_Identity;
 }
 descriptor_set_layout : VkDescriptorSetLayout;
 pipeline_layout : VkPipelineLayout;
@@ -93,6 +94,10 @@ descriptor_sets : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSet;
 // Meshes
 first_mesh : Mesh;
 
+active_camera : CameraManager.Camera;
+
+rotation : float = 0.0;
+
 main :: () {
   // Mesh?
   first_mesh = load_mesh();
@@ -100,7 +105,10 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window := ReactorWindow.create_window(window_name = "Hello Vulkan!");
+  window := ReactorWindow.create_window(window_name = "Reactor Engine");
+
+  // Camera
+  active_camera = CameraManager.make_camera(window.aspect_ratio);
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
@@ -942,7 +950,8 @@ create_graphics_pipeline :: () {
   rasterizer.polygonMode = .VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0; // Bigger than this requires enabling WideLines
   rasterizer.cullMode = .VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = .VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_CLOCKWISE;
+  // rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE; // Could this be used to help fix shadow Acne?
   rasterizer.depthBiasConstantFactor = 0.0;
   rasterizer.depthBiasClamp = 0.0;
@@ -1220,13 +1229,14 @@ create_descriptor_pool :: () {
 
 create_descriptor_sets :: () {
 
+  alloc_info : VkDescriptorSetAllocateInfo ;
+  alloc_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  alloc_info.descriptorPool = descriptor_pool;
+  alloc_info.descriptorSetCount = 1;
+  alloc_info.pSetLayouts = *descriptor_set_layout;
+
   for 0 .. MAX_FRAMES_IN_FLIGHT - 1 {
-    alloc_info : VkDescriptorSetAllocateInfo ;
-    alloc_info.sType = .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    alloc_info.descriptorPool = descriptor_pool;
-    alloc_info.descriptorSetCount = 1;
-    alloc_info.pSetLayouts = *descriptor_set_layout;
-  
+
     if vkAllocateDescriptorSets(device, *alloc_info, *descriptor_sets[it]) != .VK_SUCCESS {
       print("failed to allocate descriptor sets!\n");
     } else {
@@ -1436,8 +1446,30 @@ draw_frame :: (delta_time : float64) {
 }
 
 update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
-  ubo : UBO_MVP = .{.{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, .{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}, .{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+  ubo : UBO_MVP;
+
+  rotation = xx (rotation + delta * 0.5);
+
+  test := Quaternion.{0, 0, 1, rotation};
+
+  normalize_or_identity(*test);
+  ubo.model = rotate(Matrix4_Identity, test);
+
+
+
+  // ubo.view = active_camera.view;
+  // ubo.projection = active_camera.proj;
+
   memcpy(uniform_buffers_mapped[current_image], *ubo, size_of(UBO_MVP));
+}
+
+fliperoo :: (mat : Matrix4) -> Matrix4 {
+  return .{
+    mat._11, mat._12, mat._13, mat._14,
+    mat._21, mat._22, mat._23, mat._24,
+    mat._31, mat._32, mat._33, mat._34,
+    mat._41, mat._42, mat._43, mat._44
+  };
 }
 
 create_shader_module :: ( source : string) -> bool, VkShaderModule {
