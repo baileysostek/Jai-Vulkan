@@ -1,4 +1,4 @@
-<p align="center"><img src="https://github.com/baileysostek/Jai-Vulkan/blob/main/github/cadmium_games.png" alt="Cadmium Games" width="512"/></p>
+<!-- <p align="center"><img src="https://github.com/baileysostek/Jai-Vulkan/blob/main/github/cadmium_games.png" alt="Cadmium Games" width="512"/></p> -->
 
 # <p align="center"> Jai-Vulkan </p>
 Hello! I was graciously added to the Jai-Beta and I fully intend to switch over the development of my Game, Guac-A-Mole to use Jai instead of Java. 
@@ -11,11 +11,19 @@ This project will slowly grow and develop over time to replace my Java-based gam
 
 
 ## Todo
+[] Create Mesh loaded to load complex models
+[] Create ShaderManager which can automatically reload or hot-swap shaders during development
+[] ImGUI + Immediate Mode Graphics layers.
+[] Learn about differed rendering in Vulkan.
+[] PBR shader for Vulkan
+[] Re-Implement game logic for Guac-A-Mole
+
+LOTS more TODO, I intend for this repository to have feature parody with my Java-based implementation of Reactor. 
 
 ## <p align="center"> Test </p>
 <p align="center"><img src="https://github.com/baileysostek/Jai-Vulkan/blob/main/github/reactor_5-9-23.gif" alt="Jai-Vulkan"/></p>
 
-## Timeline
+## <p align="center"> Timeline </p>
 
 #### May - 09 - 2023
 * Created README and organized repo to be more presentable.
