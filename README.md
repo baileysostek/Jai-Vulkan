@@ -20,8 +20,8 @@ This project will slowly grow and develop over time to replace my Java-based gam
 
 LOTS more TODO, I intend for this repository to have feature parody with my Java-based implementation of Reactor. 
 
-## <p align="center"> Test </p>
-<p align="center"><img src="https://github.com/baileysostek/Jai-Vulkan/blob/main/github/reactor_5-9-23.mp4" alt="Jai-Vulkan"/></p>
+## <p align="center"> Current Progress </p>
+<p align="center"><blockquote class="imgur-embed-pub" lang="en" data-id="a/ZYKKUlu" data-context="false" ><a href="//imgur.com/a/ZYKKUlu"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script></script></p>
 
 ## <p align="center"> Timeline </p>
 
