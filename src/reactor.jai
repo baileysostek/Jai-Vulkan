@@ -66,7 +66,7 @@ graphics_pipeline : VkPipeline;
 command_pool : VkCommandPool;
 
 // How many frames in flight we allow at a time.
-MAX_FRAMES_IN_FLIGHT :: 2;
+MAX_FRAMES_IN_FLIGHT :: 3;
 
 // Keep track of the frame index
 frame_index : u32 = 0;
@@ -105,10 +105,10 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window := ReactorWindow.create_window(window_name = "Reactor Engine");
+  window := ReactorWindow.create_window(window_name = "Reactor Engine", window_width = 512, window_height = 512);
 
   // Camera
-  active_camera = CameraManager.make_camera(window.aspect_ratio);
+  active_camera = CameraManager.make_camera(window.width, window.height);
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
@@ -1448,28 +1448,19 @@ draw_frame :: (delta_time : float64) {
 update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
   ubo : UBO_MVP;
 
-  rotation = xx (rotation + delta * 0.5);
+  rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
-  test := Quaternion.{0, 0, 1, rotation};
+  ubo.model = transpose(.{
+    1, 0, 0, ,
+    0, 1, 0, 1,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  });
 
-  normalize_or_identity(*test);
-  ubo.model = rotate(Matrix4_Identity, test);
-
-
-
-  // ubo.view = active_camera.view;
-  // ubo.projection = active_camera.proj;
+  ubo.view = active_camera.view;
+  ubo.projection = active_camera.proj;
 
   memcpy(uniform_buffers_mapped[current_image], *ubo, size_of(UBO_MVP));
-}
-
-fliperoo :: (mat : Matrix4) -> Matrix4 {
-  return .{
-    mat._11, mat._12, mat._13, mat._14,
-    mat._21, mat._22, mat._23, mat._24,
-    mat._31, mat._32, mat._33, mat._34,
-    mat._41, mat._42, mat._43, mat._44
-  };
 }
 
 create_shader_module :: ( source : string) -> bool, VkShaderModule {

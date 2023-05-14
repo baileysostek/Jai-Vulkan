@@ -1,64 +1,57 @@
 #import "Math";
+#import "Basic";
 
 Camera :: struct {
   view : Matrix4 = Matrix4_Identity;
   proj : Matrix4 = Matrix4_Identity;
 }
 
-make_camera :: (aspect_ratio : float) -> Camera {
+make_camera :: (width : int, height : int) -> Camera {
   out := Camera.{};
 
-  // out.view = transpose(.{
-  //   1, 0, 0, 0,
-  //   0, 1, 0, 0,
-  //   0, 0, 1, 1,
-  //   0, 0, 0, 1
-  // });
-  
-  // out.proj = perspective(to_radians(60.0), aspect_ratio, 0.1, 10.0);
+  // TODO: Camera position and rotation
+  out.view = transpose(inverse(.{
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  }));
 
-  out.view = transpose(make_look_at_matrix(.{0.0, 3.0, 0.0}, .{0.0, 0.0, 0.0}, .{0.0, 0.0, 1.0}));
-  out.proj = transpose(make_projection_matrix(45.0 * PI / 180.0, aspect_ratio, 0.1, 10.0));
-  out.proj._22 = 1.0;
+  // Clip
+  X := transpose(inverse(.{
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  }));
+
+  // Perspective
+  P := perspective(width, height, 70.0, 0.1, 10.0);
+  
+  // Projection * Clip
+  // out.proj = P;
+
   return out;
 }
 
-perspective :: (vertical_fov : float , aspect_ratio : float, n : float, f : float) -> Matrix4 {
-    fov_rad : float = vertical_fov * 2.0 * PI / 360.0;
-    focal_length : float = 1.0 / tan(fov_rad / 2.0);
+/**
+  Perspective projection matrix, where a−1 is the framebuffer’s aspect ratio h/w, 
+  ϕ is the field of view, 
+  n is the distance of the near plane, 
+  f is the distance of the far plane.
+*/
+perspective :: (width : int, height : int, fov : float, near_plane : float, far_plane : float) -> Matrix4 {
 
-    x : float =  focal_length / aspect_ratio;
-    y : float = -focal_length;
-    A : float = n / (f - n);
-    B : float = f * A;
+  a := (cast(float)width / cast(float)height);
 
-    projection : Matrix4;
+  f := 1.0 - tan(((fov / 2.0) / 360.0) * 2.0 * PI);
 
-    if true {
-      projection = Matrix4.{
-        x,   0.0,  0.0, 0.0,
-        0.0,   y,  0.0, 0.0,
-        0.0, 0.0,    A,   B,
-        0.0, 0.0, -1.0, 0.0,
-      };
-    } else {
-      projection = Matrix4.{
-        1/x, 0.0, 0.0,  0.0,
-        0.0, 1/y, 0.0,  0.0,
-        0.0, 0.0, 0.0, -1.0,
-        0.0, 0.0, 1/B,  A/B,
-      };
-    }
+  out : Matrix4 = transpose(.{
+    f / a, 0, 0, 0,
+    0, -f, 0, 0,
+    0, 0, far_plane / (near_plane - far_plane), -1.0,
+    0, 0, (near_plane * far_plane) / (near_plane - far_plane), 0
+  });
 
-    // if (inverse)
-    // {
-    //     *inverse = float4x4({
-    //         1/x,  0.0f, 0.0f,  0.0f,
-    //         0.0f,  1/y, 0.0f,  0.0f,
-    //         0.0f, 0.0f, 0.0f, -1.0f,
-    //         0.0f, 0.0f,  1/B,   A/B,
-    //     });
-    // }
-
-    return projection;
+  return out;
 }
