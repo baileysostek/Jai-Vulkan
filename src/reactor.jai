@@ -57,7 +57,10 @@ UBO_MVP :: struct {
   model      : Matrix4 = Matrix4_Identity;
   view       : Matrix4 = Matrix4_Identity;
   projection : Matrix4 = Matrix4_Identity;
+  aspect_ratio : float = 1.0;
 }
+ubo : UBO_MVP;
+
 descriptor_set_layout : VkDescriptorSetLayout;
 pipeline_layout : VkPipelineLayout;
 graphics_pipeline : VkPipeline;
@@ -105,7 +108,7 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window := ReactorWindow.create_window(window_name = "Reactor Engine", window_width = 512, window_height = 512);
+  window = ReactorWindow.create_window(window_name = "Reactor Engine");
 
   // Camera
   active_camera = CameraManager.make_camera(window.width, window.height);
@@ -151,7 +154,7 @@ main :: () {
 
     if running_delta >= 1_000_000_000 { // We know a second has passed
       running_delta -= 1_000_000_000;
-      print("fps:%,%\n", frames, delta_time);
+      // print("fps:%,%\n", frames, delta_time);
       frames = 0;
     }
 
@@ -551,7 +554,7 @@ create_swap_chain :: () {
   if vkCreateSwapchainKHR(device, *create_info, null, *swap_chain) != .VK_SUCCESS {
     print("failed to create swap chain!\n");
   } else {
-    print("Created swap chain!\n");
+    // print("Created swap chain!\n");
   }
 
   // Resize and Populate our swap_chain_images buffer
@@ -655,7 +658,7 @@ create_image_views :: () {
     if vkCreateImageView(device, *create_info, null, *swap_chain_image_views[index]) != .VK_SUCCESS {
       print("failed to create image views!\n");
     } else {
-      print("created image view!\n");
+      // print("created image view!\n");
     }
     
   }
@@ -841,7 +844,7 @@ create_render_pass :: () {
   if vkCreateRenderPass(device , *render_pass_info, null, *render_pass) != .VK_SUCCESS {
     print("failed to create render pass!\n");
   } else {
-    print("created render pass!\n");
+    // print("created render pass!\n");
   }
 }
 
@@ -862,7 +865,7 @@ create_descriptor_set_layout :: () {
   if vkCreateDescriptorSetLayout(device, *layout_info, null, *descriptor_set_layout) != .VK_SUCCESS {
     print("failed to create descriptor set layout!\n");
   } else {
-    print("created descriptor set layout!\n");
+    // print("created descriptor set layout!\n");
   }
 
 }
@@ -1003,7 +1006,7 @@ create_graphics_pipeline :: () {
   if vkCreatePipelineLayout(device , *pipeline_layout_info, null, *pipeline_layout) != .VK_SUCCESS {
     print("failed to create pipeline layout!\n");
   } else {
-    print("created pipeline layout!\n");
+    // print("created pipeline layout!\n");
   }
 
   // Configure Dynamic State
@@ -1041,7 +1044,7 @@ create_graphics_pipeline :: () {
   if vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, *pipeline_info, null, *graphics_pipeline) != .VK_SUCCESS {
     print("failed to create graphics pipeline!\n");
   } else {
-    print("created graphics pipeline!\n");
+    // print("created graphics pipeline!\n");
   }
 
 
@@ -1075,7 +1078,7 @@ create_frame_buffers :: () {
     if vkCreateFramebuffer(device, *frame_buffer_info, null, *swap_chain_frame_buffers[index]) != .VK_SUCCESS{
       print("failed to create framebuffer!\n");
     } else {
-      print("created framebuffer!\n");
+      // print("created framebuffer!\n");
     }
   }
 }
@@ -1092,7 +1095,7 @@ create_command_pool :: () {
   if vkCreateCommandPool(device , *pool_info, null, *command_pool) != .VK_SUCCESS {
     print("failed to create command pool!\n");
   } else {
-    print("Created command pool!\n");
+    // print("Created command pool!\n");
   }
 }
 
@@ -1160,7 +1163,7 @@ create_buffer :: (size : VkDeviceSize, usage : VkBufferUsageFlags , properties :
   if vkCreateBuffer(device, *buffer_info, null, buffer) != .VK_SUCCESS {
     print("failed to create buffer!\n");
   } else {
-    print("created buffer!\n");
+    // print("created buffer!\n");
   }
 
   mem_requirements : VkMemoryRequirements;
@@ -1223,7 +1226,7 @@ create_descriptor_pool :: () {
   if vkCreateDescriptorPool(device, *pool_info, null, *descriptor_pool) != .VK_SUCCESS {
     print("failed to create descriptor pool!\n");
   } else {
-    print("created descriptor pool!\n");
+    // print("created descriptor pool!\n");
   }
 }
 
@@ -1361,7 +1364,7 @@ create_sync_objects :: () {
       vkCreateFence(device, *fence_info, null, *in_flight_fences[it]) != .VK_SUCCESS {
       print("failed to create semaphores!\n");
     } else {
-      print("created semaphores!\n");
+      // print("created semaphores!\n");
     }
   }
 
@@ -1387,7 +1390,7 @@ draw_frame :: (delta_time : float64) {
       // Succeded
     case .VK_ERROR_OUT_OF_DATE_KHR; #through; 
     case .VK_SUBOPTIMAL_KHR;
-      print("Recreated swap chain!\n");
+      // print("Recreated swap chain!\n");
       recreate_swap_chain();
       return;
     case; // Unhandled error.
@@ -1446,18 +1449,17 @@ draw_frame :: (delta_time : float64) {
 }
 
 update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
-  ubo : UBO_MVP;
+  // Update our UBO
+  ubo.aspect_ratio = window.aspect_ratio;
 
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
   ubo.model = transpose(.{
-    1, 0, 0, sin(rotation * 10),
-    0, 1, 0, cos(rotation * 10),
-    0, 0, 1, ((sin(rotation) + 1.0) / 2.0) * 10 ,
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 1,
     0, 0, 0, 1
   });
-
-  print("Test:%\n", ((sin(rotation) + 1.0) / 2.0) * 10);
 
   ubo.view = active_camera.view;
   ubo.projection = active_camera.proj;

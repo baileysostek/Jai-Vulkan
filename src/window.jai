@@ -43,6 +43,14 @@ create_window :: (window_name := "Window Title", window_width : u32 = 640, windo
 toggle_fullscreen :: (window : *ReactorWindow) {
   window.fullscreen = !window.fullscreen;
   WindowCreation.toggle_fullscreen(window.window_pointer, window.fullscreen, *window.save_info);
+  if (window.fullscreen) {
+    success, monitor_width, monitor_height := get_monitor_size(window);
+    resize_window(window, xx monitor_width, xx monitor_height);
+    print("Test 1\n");
+  } else {
+    resize_window(window, xx (window.save_info.rect.right - window.save_info.rect.left), xx (window.save_info.rect.bottom - window.save_info.rect.top));
+    print("Test 2\n");
+  }
 }
 
 poll_window_events :: (window : *ReactorWindow){
@@ -56,7 +64,7 @@ poll_window_events :: (window : *ReactorWindow){
 
     if it.type == .KEYBOARD && it.key_code == .F11 && it.key_pressed == 1 then toggle_fullscreen(window);
 
-    print("%\n", it);
+    // print("%\n", it);
   }
 }
 
@@ -67,7 +75,8 @@ is_close_requested :: (window : ReactorWindow) -> bool {
 resize_window :: (window : *ReactorWindow, width : u32, height : u32) {
   window.width = width;
   window.height = height;
-  window.aspect_ratio =cast(float)width / cast(float)height;
+  window.aspect_ratio = cast(float)window.width / cast(float)window.height;
+  print("AR:%\n", window.aspect_ratio);
 }
 
 center_window_on_monitor :: (window : ReactorWindow) {
