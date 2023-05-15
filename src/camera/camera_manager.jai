@@ -13,20 +13,20 @@ make_camera :: (width : int, height : int) -> Camera {
   out.view = transpose(inverse(.{
     1, 0, 0, 0,
     0, 1, 0, 0.5,
-    0, 0, 1, 0,
+    0, 0, 1, -0.3,
     0, 0, 0, 1
   }));
 
   // Clip
   X := transpose(inverse(.{
     1, 0, 0, 0,
-    0, -1, 0, 0,
-    0, 0, -1, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
     0, 0, 0, 1
   }));
 
   // Perspective
-  P := transpose(perspective(60.0 / 180.0 * PI, 1.0, 0.1, -10.0));
+  P := transpose(perspective(60.0 / 180.0 * PI, 1.0, 0.0, 1.0));
   
   // Projection * Clip
   out.proj = P * X;
@@ -50,6 +50,7 @@ perspective :: (fov : float, aspect : float, near_plane : float, far_plane : flo
     projection_matrix._33 = far_plane / (far_plane - near_plane);
     projection_matrix._43 = 1.0;
     projection_matrix._34 = -(far_plane * near_plane) / (far_plane - near_plane);
+    projection_matrix._44 = 1.0;
 
   return projection_matrix;
 }
