@@ -950,8 +950,8 @@ create_graphics_pipeline :: () {
   rasterizer.polygonMode = .VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0; // Bigger than this requires enabling WideLines
   rasterizer.cullMode = .VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_CLOCKWISE;
-  // rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.frontFace = VkFrontFace.VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE; // Could this be used to help fix shadow Acne?
   rasterizer.depthBiasConstantFactor = 0.0;
   rasterizer.depthBiasClamp = 0.0;
@@ -1451,11 +1451,13 @@ update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
   ubo.model = transpose(.{
-    1, 0, 0, ,
-    0, 1, 0, 1,
-    0, 0, 1, 0,
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, (-(cos(rotation) + 1.0) / 2.0) ,
     0, 0, 0, 1
   });
+
+  print("Test:%\n", (-(cos(rotation) + 1.0) / 2.0));
 
   ubo.view = active_camera.view;
   ubo.projection = active_camera.proj;
