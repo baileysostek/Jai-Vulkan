@@ -25,6 +25,10 @@ LOTS more TODO, I intend for this repository to have feature parody with my Java
 
 ## <p align="center"> Timeline </p>
 
+#### May - 14 - 2023
+* Fixed issue with projection matrix passed in Uniform Buffer Object to vertex shader for perspective projection. Now we have perspective projection and we can continue on to render multiple objects on the screen at a time. Not sure best way to do this, Uniform Buffer Array maybe?
+
+
 #### May - 09 - 2023
 * Created README and organized repo to be more presentable.
 
