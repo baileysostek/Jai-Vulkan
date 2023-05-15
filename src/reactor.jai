@@ -1451,13 +1451,13 @@ update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
   ubo.model = transpose(.{
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, ((cos(rotation) + 1.0) / 2.0) * 10 ,
+    1, 0, 0, sin(rotation * 10),
+    0, 1, 0, cos(rotation * 10),
+    0, 0, 1, ((sin(rotation) + 1.0) / 2.0) * 10 ,
     0, 0, 0, 1
   });
 
-  print("Test:%\n", (-(cos(rotation) + 1.0) / 2.0));
+  print("Test:%\n", ((sin(rotation) + 1.0) / 2.0) * 10);
 
   ubo.view = active_camera.view;
   ubo.projection = active_camera.proj;

@@ -40,17 +40,17 @@ make_camera :: (width : int, height : int) -> Camera {
   n is the distance of the near plane, 
   f is the distance of the far plane.
 */
-perspective :: (fov : float, aspect : float, near_plane : float, far_plane : float) -> Matrix4 {
+perspective :: (fov : float, aspect : float, n : float, f : float) -> Matrix4 {
 
-    tan_half_fov := tan(fov / 2.0);
+    t := tan(fov / 2.0);
 
     projection_matrix := Matrix4_Identity;
 
-    projection_matrix._11 = aspect / (tan_half_fov);
-    projection_matrix._22 = 1.0 / (tan_half_fov);
-    projection_matrix._33 = far_plane / (far_plane - near_plane);
+    projection_matrix._11 = aspect / (t);
+    projection_matrix._22 = 1.0 / (t);
+    projection_matrix._33 = f / (f - n);
     projection_matrix._43 = 1.0;
-    projection_matrix._34 = -(far_plane * near_plane) / (far_plane - near_plane);
+    projection_matrix._34 = -(n * f) / (f - n);
     projection_matrix._44 = 0.0;
 
   return projection_matrix;
