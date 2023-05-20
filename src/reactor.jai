@@ -1,26 +1,23 @@
 #if OS == .WINDOWS {
   #import "Windows";
 }
-
-#load "window.jai";
-#load "shader_manager.jai";
-#load "camera/camera_manager.jai";
-
-#load "input/keyboard.jai";
-
-#load "mesh/mesh.jai";
-#load "entity/entity.jai";
-
 #import "Basic";
 #import "Vulkan";
 #import "String";
 #import "Math";
 #import "Input";
 
-DEBUG :: true;
 
-// Hold onto our keyboard state.
-keyboard : ReactorKeyboardState = .{};
+// All of the reactor specific components that makeup this game engine are loaded here.
+#load "window.jai";
+#load "shader_manager.jai";
+#load "camera/camera_manager.jai";
+
+#load "input/keyboard.jai";
+
+#load "entity/entity.jai";
+
+DEBUG :: true;
 
 // Refrence to our window
 window : ReactorWindow;
@@ -62,7 +59,7 @@ UBO_MVP :: struct {
   model      : Matrix4 = Matrix4_Identity;
   view       : Matrix4 = Matrix4_Identity;
   projection : Matrix4 = Matrix4_Identity;
-  aspect_ratio : float = 1.0;
+  // aspect_ratio : float = 1.0 #align 16; 
 }
 ubo : UBO_MVP;
 
@@ -101,8 +98,6 @@ descriptor_sets : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSet;
 
 // Meshes
 first_mesh : Mesh;
-
-active_camera : Camera;
 
 rotation : float = 0.0;
 
@@ -159,12 +154,12 @@ main :: () {
 
     if running_delta >= 1_000_000_000 { // We know a second has passed
       running_delta -= 1_000_000_000;
-      print("fps:%,%\n", frames, delta_time);
+      print("fps:%\n", frames);
       frames = 0;
     }
 
 
-    poll_window_events(*keyboard, *window);
+    poll_window_events(*window);
 
     draw_frame(delta_time);
     // // Handle Resize
@@ -1426,32 +1421,47 @@ update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
 
   speed : float = xx ( 1.0 * delta);
 
-  if is_key_pressed(*keyboard, 87) { // W
-    Camera.translate(*active_camera, 0.0, 0.0, speed);
+  if is_key_pressed(.W) { // W
+    Camera.translate( active_camera.forward_direction * .{-1.0, -1.0, 1.0} * speed);
   }
 
-  if is_key_pressed(*keyboard, 83) { // S
-    Camera.translate(*active_camera, 0.0, 0.0, -speed);
+  if is_key_pressed(.S) { // S
+    Camera.translate( active_camera.forward_direction * .{-1.0, -1.0, 1.0} * -speed);
   }
 
-  if is_key_pressed(*keyboard, 65) { // A
-    Camera.translate(*active_camera, -speed, 0.0, 0.0);
+  if is_key_pressed(.A) { // A
+    Camera.translate( -speed, 0.0, 0.0);
   }
 
-  if is_key_pressed(*keyboard, 68) { // D
-    Camera.translate(*active_camera, speed, 0.0, 0.0);
+  if is_key_pressed(.D) { // D
+    Camera.translate( speed, 0.0, 0.0);
   }
 
-  if is_key_pressed(*keyboard, 81) { // Q
-    Camera.translate(*active_camera, 0.0, speed, 0.0);
+  if is_key_pressed(.Q) { // Q
+    // Camera.translate( 0.0, speed, 0.0);
+    Camera.rotate(  0.0, PI * speed, 0.0);
   }
 
-  if is_key_pressed(*keyboard, 69) { // E
-    Camera.translate(*active_camera, 0.0, -speed, 0.0);
+  if is_key_pressed(.E) { // E
+    // Camera.translate( 0.0, -speed, 0.0);
+    Camera.rotate( 0.0, PI * -speed, 0.0);
   }
 
-  // Update our UBO
-  ubo.aspect_ratio = window.aspect_ratio;
+  if is_key_pressed(.THREE) { // 1
+    Camera.rotate(  0.0, 0.0, PI * -speed);
+  }
+
+  if is_key_pressed(.FOUR) { // 2
+    Camera.rotate( 0.0, 0.0, PI * speed);
+  }
+
+    if is_key_pressed(.ONE) { // 1
+    Camera.rotate( PI * -speed, 0.0, 0.0);
+  }
+
+  if is_key_pressed(.TWO) { // 2
+    Camera.rotate( PI * speed, 0.0, 0.0);
+  }
 
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
@@ -1466,8 +1476,8 @@ update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
   normalize_or_identity(*test);
   ubo.model = translation;
 
-  ubo.view = Camera.getView(*active_camera);
-  ubo.projection = active_camera.proj;
+  ubo.view        = Camera.getView();
+  ubo.projection  = Camera.getProjection( window.aspect_ratio);
 
   memcpy(uniform_buffers_mapped[current_image], *ubo, size_of(UBO_MVP));
 }

@@ -11,6 +11,8 @@ This project will slowly grow and develop over time to replace my Java-based gam
 
 
 ## Todo
+[] SSBO implementation to hold position data for our entities. 
+[] ModelLoader file to cache models loaded by the project with #run directives to bake assets into the executable to reduce the need to load from disk at startup.
 [] Create Mesh loaded to load complex models
 [] Create ShaderManager which can automatically reload or hot-swap shaders during development
 [] ImGUI + Immediate Mode Graphics layers.
@@ -25,10 +27,15 @@ LOTS more TODO, I intend for this repository to have feature parody with my Java
 
 ## <p align="center"> Timeline </p>
 
-#### May - 19 - 2023
-* Re-Implemented Camera class to be more correc than the way that I was representing cameras before. Once I better understand module scopes the various parts of Reactor will probably be re-implemented an additional time to scope the variables currently in reactor.jai to the CameraManager module. 
+#### May - 20 - 2023
+* Changed Camera rotation to be correct for First Person Perspective with Y,X,Z rotation ordering.
+* Refactored Keyboard class and Camera class to hold references to the keyboard state and active camera respectively. Now this information does not need to be passed around from the core reactor.jai file to the rest of the project.  
 
-Move around with W,A,S,D,Q,E 
+
+#### May - 19 - 2023
+* Re-Implemented Camera class to be more correct than the way that I was representing cameras before. Once I better understand module scopes the various parts of Reactor will probably be re-implemented an additional time to scope the variables currently in reactor.jai to the CameraManager module. 
+
+* Move around with W,A,S,D,Q,E 
 
 #### May - 14 - 2023
 * Fixed issue with projection matrix passed in Uniform Buffer Object to vertex shader for perspective projection. Now we have perspective projection and we can continue on to render multiple objects on the screen at a time. Not sure best way to do this, Uniform Buffer Array maybe?

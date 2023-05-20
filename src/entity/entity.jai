@@ -1,5 +1,7 @@
 #import "Math";
 
+#load "mesh.jai";
+
 Entity :: struct {
   transform : Matrix4;
   mesh : *Mesh = null;

@@ -59,7 +59,7 @@ toggle_fullscreen :: (window : *ReactorWindow) {
   }
 }
 
-poll_window_events :: (keyboard : *ReactorKeyboardState, window : *ReactorWindow){
+poll_window_events :: (window : *ReactorWindow){
   update_window_events();
 
   quit := false;
@@ -71,7 +71,7 @@ poll_window_events :: (keyboard : *ReactorKeyboardState, window : *ReactorWindow
     if it.type == .KEYBOARD && it.key_code == .F11 && it.key_pressed == 1 then toggle_fullscreen(window);
 
     if it.type == .KEYBOARD
-      set_key(keyboard, it.key_code, it.key_pressed == 1);
+      set_key(xx it.key_code, it.key_pressed == 1);
 
 
     // print("%\n",it);
