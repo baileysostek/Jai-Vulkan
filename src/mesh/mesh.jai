@@ -17,40 +17,54 @@ PrimitiveType :: enum u32 {
 
 Mesh :: struct {
   vertex_count : u32;
-  vertices : [] Vertex;
+  vertices : [] Vector3;
+  
+  // Per Face
+  normal     : [] Vector3;
+  bitangent  : [] Vector3;
+  tangent    : [] Vector3;
+
   index_count : u32;
   indices  : [] u32;
 
-  // Optional?
   primitive_type : PrimitiveType = .POINTS;
 }
 
-Vertex :: struct {
-  position  : Vector3; // Position of vertex
-  
-  normal    : Vector3; // TBN Matrix information for Normal Mapping later.
-  // bitangent : Vector3;
-  // tangent   : Vector3;
+// Anything that is the same for each vertex independant of a face goes in here. 
+// Position
+// Texture Coordinate
+// Vertex :: struct {
+//   position  : Vector3; // Position of vertex
+//   // texutre   : Vector2; // UV coordinates
+//   normal    : Vector3; 
 
-  // texutre   : Vector2; // UV coordinates
-
-  // TODO bone weights and indices.
-}
+// }
 
 // Mesh Loader.
 load_mesh :: () -> Mesh {
   mesh : Mesh;
 
-  mesh.vertices = NewArray(4, Vertex);
-  mesh.vertices[0] = .{.{-0.5, -0.5, 0.0}, .{1.0, 0.0, 0.0}};
-  mesh.vertices[1] = .{.{ 0.5, -0.5, 0.0}, .{0.0, 1.0, 0.0}};
-  mesh.vertices[2] = .{.{ 0.5,  0.5, 0.0}, .{0.0, 0.0, 1.0}};
-  mesh.vertices[3] = .{.{-0.5,  0.5, 0.0}, .{1.0, 1.0, 1.0}};
+  mesh.vertices = NewArray(8, Vector3);
+  mesh.vertices[0] = .{-0.5, -0.5, -0.5};
+  mesh.vertices[1] = .{ 0.5, -0.5, -0.5};
+  mesh.vertices[2] = .{ 0.5,  0.5, -0.5};
+  mesh.vertices[3] = .{-0.5,  0.5, -0.5};
+  mesh.vertices[4] = .{-0.5, -0.5,  0.5};
+  mesh.vertices[5] = .{ 0.5, -0.5,  0.5};
+  mesh.vertices[6] = .{ 0.5,  0.5,  0.5};
+  mesh.vertices[7] = .{-0.5,  0.5,  0.5};
 
-  mesh.indices = u32.[0, 1, 2, 2, 3, 0];
+  mesh.indices = u32.[
+    0, 1, 2, 2, 3, 0, // Front
+    5, 4, 7, 7, 6, 5, // Back
+    4, 0, 3, 3, 7, 4, // Left
+    1, 5, 6, 6, 2, 1, // Right
+    4, 5, 1, 1, 0, 4, // Top
+    3, 2, 6, 6, 7, 3  // Bottom
+  ];
   
   mesh.vertex_count = xx mesh.vertices.count;
-  mesh.index_count = xx mesh.indices.count;
+  mesh.index_count  = xx mesh.indices.count;
 
   return mesh;
 }
@@ -58,7 +72,7 @@ load_mesh :: () -> Mesh {
 get_binding_description :: () -> VkVertexInputBindingDescription {
   binding_description : VkVertexInputBindingDescription;  
   binding_description.binding = 0; // Layout location?
-  binding_description.stride = size_of(Vertex);
+  binding_description.stride = size_of(Vector3);
   binding_description.inputRate = .VK_VERTEX_INPUT_RATE_VERTEX; // One Vertex Per Vertex.
   return binding_description;
 }

@@ -2,12 +2,14 @@
   #import "Windows";
 }
 
-ReactorWindow :: #import,file "window.jai";
-ShaderManager :: #import,file "shader_manager.jai";
-CameraManager :: #import,file "camera/camera_manager.jai";
+#load "window.jai";
+#load "shader_manager.jai";
+#load "camera/camera_manager.jai";
 
-#import,file "mesh/mesh.jai";
-#import,file "entity/entity.jai";
+#load "input/keyboard.jai";
+
+#load "mesh/mesh.jai";
+#load "entity/entity.jai";
 
 #import "Basic";
 #import "Vulkan";
@@ -17,8 +19,11 @@ CameraManager :: #import,file "camera/camera_manager.jai";
 
 DEBUG :: true;
 
+// Hold onto our keyboard state.
+keyboard : ReactorKeyboardState = .{};
+
 // Refrence to our window
-window : ReactorWindow.ReactorWindow;
+window : ReactorWindow;
 window_changed_sizes := false;
 
 // Vulkan configuration stuff.
@@ -97,7 +102,7 @@ descriptor_sets : [MAX_FRAMES_IN_FLIGHT] VkDescriptorSet;
 // Meshes
 first_mesh : Mesh;
 
-active_camera : CameraManager.Camera;
+active_camera : Camera;
 
 rotation : float = 0.0;
 
@@ -108,10 +113,10 @@ main :: () {
   get_attribute_descriptions();
 
   // First we create a window.
-  window = ReactorWindow.create_window(window_name = "Reactor Engine");
+  window = create_window(window_name = "Reactor Engine");
 
   // Camera
-  active_camera = CameraManager.make_camera(window.width, window.height);
+  active_camera = PerspectiveCamera.{};
 
   // Now lets initialize Vulkan.
   success , vk_instance := init_vulkan();
@@ -142,7 +147,7 @@ main :: () {
   running_delta : float = 0.0;
   frames : u32 = 0;
 
-  while !ReactorWindow.is_close_requested(window) {
+  while !is_close_requested(window) {
 
     // Compute frame times
     now := current_time_monotonic();
@@ -154,11 +159,12 @@ main :: () {
 
     if running_delta >= 1_000_000_000 { // We know a second has passed
       running_delta -= 1_000_000_000;
-      // print("fps:%,%\n", frames, delta_time);
+      print("fps:%,%\n", frames, delta_time);
       frames = 0;
     }
 
-    ReactorWindow.poll_window_events(*window);
+
+    poll_window_events(*keyboard, *window);
 
     draw_frame(delta_time);
     // // Handle Resize
@@ -166,7 +172,7 @@ main :: () {
       if it.window == window.window_pointer {
         should_reinit := (it.width != xx window.width) || (it.height != xx window.height);
         
-        ReactorWindow.resize_window(*window, xx it.width, xx it.height);
+        resize_window(*window, xx it.width, xx it.height);
         
         if should_reinit {
           window_changed_sizes = true; // Reinit swapchain.
@@ -323,9 +329,7 @@ init_vulkan :: () -> bool, VkInstance {
     populate_debug_messenger_create_info(*create_debug_messenger);
 
     if (create_debug_utils_messenger_ext(instance, *create_debug_messenger, null, *debug_messenger) != .VK_SUCCESS) {
-      print("%\n", "failed to set up debug messenger!");      
-    } else {
-      print("%\n", "Created debug messenger!");    
+      print("failed to set up debug messenger!\n");      
     }
   }
 
@@ -553,8 +557,6 @@ create_swap_chain :: () {
 
   if vkCreateSwapchainKHR(device, *create_info, null, *swap_chain) != .VK_SUCCESS {
     print("failed to create swap chain!\n");
-  } else {
-    // print("Created swap chain!\n");
   }
 
   // Resize and Populate our swap_chain_images buffer
@@ -618,7 +620,7 @@ choose_swap_present_mode :: (available_present_modes : [] VkPresentModeKHR) -> V
   return .VK_PRESENT_MODE_FIFO_KHR;
 }
 
-choose_swap_extent :: (capabilities : VkSurfaceCapabilitiesKHR, window : ReactorWindow.ReactorWindow) -> VkExtent2D {
+choose_swap_extent :: (capabilities : VkSurfaceCapabilitiesKHR, window : ReactorWindow) -> VkExtent2D {
   if capabilities.currentExtent.width != U32_MAX {
     return capabilities.currentExtent;
   } else {
@@ -657,10 +659,7 @@ create_image_views :: () {
 
     if vkCreateImageView(device, *create_info, null, *swap_chain_image_views[index]) != .VK_SUCCESS {
       print("failed to create image views!\n");
-    } else {
-      // print("created image view!\n");
     }
-    
   }
 }
 
@@ -788,7 +787,7 @@ check_validiation_layer_support :: () -> bool {
   return true;
 }
 
-create_surface :: (instance : VkInstance, window : ReactorWindow.ReactorWindow) -> bool {
+create_surface :: (instance : VkInstance, window : ReactorWindow) -> bool {
   #if OS == .WINDOWS {
     surfaceCreateInfo: VkWin32SurfaceCreateInfoKHR; 
     surfaceCreateInfo.sType     = .WIN32_SURFACE_CREATE_INFO_KHR;
@@ -843,8 +842,6 @@ create_render_pass :: () {
 
   if vkCreateRenderPass(device , *render_pass_info, null, *render_pass) != .VK_SUCCESS {
     print("failed to create render pass!\n");
-  } else {
-    // print("created render pass!\n");
   }
 }
 
@@ -864,16 +861,13 @@ create_descriptor_set_layout :: () {
 
   if vkCreateDescriptorSetLayout(device, *layout_info, null, *descriptor_set_layout) != .VK_SUCCESS {
     print("failed to create descriptor set layout!\n");
-  } else {
-    // print("created descriptor set layout!\n");
   }
-
 }
 
 // Create our Graphics Pipeline
 create_graphics_pipeline :: () {
-  vert_success, vert_source := ShaderManager.load_shader("./res/shaders/simple_shader.vert.spv");
-  frag_success, frag_source := ShaderManager.load_shader("./res/shaders/simple_shader.frag.spv");
+  vert_success, vert_source := load_shader("./res/shaders/simple_shader.vert.spv");
+  frag_success, frag_source := load_shader("./res/shaders/simple_shader.frag.spv");
 
   vert_module_success, vert_shader_module := create_shader_module(vert_source);
   frag_module_success, frag_shader_module := create_shader_module(frag_source);
@@ -1005,8 +999,6 @@ create_graphics_pipeline :: () {
 
   if vkCreatePipelineLayout(device , *pipeline_layout_info, null, *pipeline_layout) != .VK_SUCCESS {
     print("failed to create pipeline layout!\n");
-  } else {
-    // print("created pipeline layout!\n");
   }
 
   // Configure Dynamic State
@@ -1043,8 +1035,6 @@ create_graphics_pipeline :: () {
 
   if vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, *pipeline_info, null, *graphics_pipeline) != .VK_SUCCESS {
     print("failed to create graphics pipeline!\n");
-  } else {
-    // print("created graphics pipeline!\n");
   }
 
 
@@ -1077,8 +1067,6 @@ create_frame_buffers :: () {
 
     if vkCreateFramebuffer(device, *frame_buffer_info, null, *swap_chain_frame_buffers[index]) != .VK_SUCCESS{
       print("failed to create framebuffer!\n");
-    } else {
-      // print("created framebuffer!\n");
     }
   }
 }
@@ -1094,14 +1082,12 @@ create_command_pool :: () {
 
   if vkCreateCommandPool(device , *pool_info, null, *command_pool) != .VK_SUCCESS {
     print("failed to create command pool!\n");
-  } else {
-    // print("Created command pool!\n");
   }
 }
 
 // Create our vertex buffer
 create_vertex_buffer :: () {
-  buffer_size : VkDeviceSize = xx (size_of(Vertex) * first_mesh.vertex_count);
+  buffer_size : VkDeviceSize = xx (size_of(Vector3) * first_mesh.vertex_count);
 
   staging_buffer : VkBuffer;
   staging_buffer_memory : VkDeviceMemory;
@@ -1162,8 +1148,6 @@ create_buffer :: (size : VkDeviceSize, usage : VkBufferUsageFlags , properties :
 
   if vkCreateBuffer(device, *buffer_info, null, buffer) != .VK_SUCCESS {
     print("failed to create buffer!\n");
-  } else {
-    // print("created buffer!\n");
   }
 
   mem_requirements : VkMemoryRequirements;
@@ -1177,8 +1161,6 @@ create_buffer :: (size : VkDeviceSize, usage : VkBufferUsageFlags , properties :
   if vkAllocateMemory(device, *alloc_info, null, buffer_memory) != .VK_SUCCESS {
     print("failed to allocate buffer memory!\n");
     return;
-  } else {
-    print("allocated buffer memory!\n");
   }
 
   vkBindBufferMemory(device, << buffer, << buffer_memory, 0);
@@ -1225,8 +1207,6 @@ create_descriptor_pool :: () {
 
   if vkCreateDescriptorPool(device, *pool_info, null, *descriptor_pool) != .VK_SUCCESS {
     print("failed to create descriptor pool!\n");
-  } else {
-    // print("created descriptor pool!\n");
   }
 }
 
@@ -1242,8 +1222,6 @@ create_descriptor_sets :: () {
 
     if vkAllocateDescriptorSets(device, *alloc_info, *descriptor_sets[it]) != .VK_SUCCESS {
       print("failed to allocate descriptor sets!\n");
-    } else {
-      print("allocated descriptor sets!\n");
     }
 
     buffer_info : VkDescriptorBufferInfo;
@@ -1282,8 +1260,6 @@ create_command_buffers :: () {
 
   if vkAllocateCommandBuffers(device, *alloc_info, command_buffers.data) != .VK_SUCCESS {
     print("failed to allocate command buffers!\n");
-  } else {
-    print("allocated command buffers!\n");
   }
 }
 
@@ -1363,8 +1339,6 @@ create_sync_objects :: () {
       vkCreateSemaphore(device, *semaphore_info, null, *render_finished_semaphores[it]) != .VK_SUCCESS ||
       vkCreateFence(device, *fence_info, null, *in_flight_fences[it]) != .VK_SUCCESS {
       print("failed to create semaphores!\n");
-    } else {
-      // print("created semaphores!\n");
     }
   }
 
@@ -1449,19 +1423,50 @@ draw_frame :: (delta_time : float64) {
 }
 
 update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
+
+  speed : float = xx ( 1.0 * delta);
+
+  if is_key_pressed(*keyboard, 87) { // W
+    Camera.translate(*active_camera, 0.0, 0.0, speed);
+  }
+
+  if is_key_pressed(*keyboard, 83) { // S
+    Camera.translate(*active_camera, 0.0, 0.0, -speed);
+  }
+
+  if is_key_pressed(*keyboard, 65) { // A
+    Camera.translate(*active_camera, -speed, 0.0, 0.0);
+  }
+
+  if is_key_pressed(*keyboard, 68) { // D
+    Camera.translate(*active_camera, speed, 0.0, 0.0);
+  }
+
+  if is_key_pressed(*keyboard, 81) { // Q
+    Camera.translate(*active_camera, 0.0, speed, 0.0);
+  }
+
+  if is_key_pressed(*keyboard, 69) { // E
+    Camera.translate(*active_camera, 0.0, -speed, 0.0);
+  }
+
   // Update our UBO
   ubo.aspect_ratio = window.aspect_ratio;
 
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
-  ubo.model = transpose(.{
+  translation := transpose(.{
     1, 0, 0, 0,
     0, 1, 0, 0,
-    0, 0, 1, 1,
+    0, 0, 1, 5,
     0, 0, 0, 1
   });
 
-  ubo.view = active_camera.view;
+  test := Quaternion.{0, 1, 0, ((sin(rotation) + 1.0) / 2.0) * 10.0};
+  normalize_or_identity(*test);
+  ubo.model = translation;
+
+  ubo.view = Camera.getView(*active_camera);
   ubo.projection = active_camera.proj;
 
   memcpy(uniform_buffers_mapped[current_image], *ubo, size_of(UBO_MVP));

@@ -1,5 +1,4 @@
 #import "Math";
-#import,file "../mesh/mesh.jai";
 
 Entity :: struct {
   transform : Matrix4;
@@ -10,10 +9,12 @@ set_position :: (x : float = 0.0, y : float = 0.0, z : float = 0.0, entity : *En
   entity.transform._14 = x;
   entity.transform._24 = y;
   entity.transform._34 = z; 
+
+  return entity;
 }
 
 translate :: (x : float = 0, y : float = 0, z : float = 0, entity : *Entity) -> *Entity {
-
+  return entity;
 }
 
 get_position :: (entity : Entity) -> float, float, float {
@@ -24,6 +25,6 @@ get_position :: (entity : Entity) -> float, float, float {
 }
 
 rotate :: (x : float = 0, y : float = 0, z : float = 0, entity : *Entity) -> *Entity {
-  
+  return entity;
 }
 

@@ -1,4 +1,4 @@
-WindowCreation :: #import "Window_Creation";
+WindowCreation  :: #import "Window_Creation";
 
 #import  "Basic";
 
@@ -22,6 +22,7 @@ ReactorWindow :: struct {
   save_info : WindowCreation.Saved_Window_Info;
 }
 
+
 create_window :: (window_name := "Window Title", window_width : u32 = 640, window_height : u32 = 480, fullscreen : bool = false) -> ReactorWindow {
   // Use Window create to create this window on the screen.
     // Create window
@@ -40,6 +41,11 @@ create_window :: (window_name := "Window Title", window_width : u32 = 640, windo
   return window;
 }
 
+vararg_1 :: (a: u8, b: u8) -> u8 {
+  print("Adding a: % and b: % in vararg_1:\n", a, b);
+  return a + b;
+}
+
 toggle_fullscreen :: (window : *ReactorWindow) {
   window.fullscreen = !window.fullscreen;
   WindowCreation.toggle_fullscreen(window.window_pointer, window.fullscreen, *window.save_info);
@@ -53,18 +59,23 @@ toggle_fullscreen :: (window : *ReactorWindow) {
   }
 }
 
-poll_window_events :: (window : *ReactorWindow){
+poll_window_events :: (keyboard : *ReactorKeyboardState, window : *ReactorWindow){
   update_window_events();
 
   quit := false;
 
   for events_this_frame {
     if it.type == .QUIT then window.quit = true;
-    if it.type == .KEYBOARD && it.key_code == .ESCAPE then window.quit = true;
 
+    if it.type == .KEYBOARD && it.key_code == .ESCAPE then window.quit = true;
     if it.type == .KEYBOARD && it.key_code == .F11 && it.key_pressed == 1 then toggle_fullscreen(window);
 
-    // print("%\n", it);
+    if it.type == .KEYBOARD
+      set_key(keyboard, it.key_code, it.key_pressed == 1);
+
+
+    // print("%\n",it);
+
   }
 }
 
@@ -76,7 +87,6 @@ resize_window :: (window : *ReactorWindow, width : u32, height : u32) {
   window.width = width;
   window.height = height;
   window.aspect_ratio = cast(float)window.width / cast(float)window.height;
-  print("AR:%\n", window.aspect_ratio);
 }
 
 center_window_on_monitor :: (window : ReactorWindow) {

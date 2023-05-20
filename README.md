@@ -21,9 +21,14 @@ This project will slowly grow and develop over time to replace my Java-based gam
 LOTS more TODO, I intend for this repository to have feature parody with my Java-based implementation of Reactor. 
 
 ## <p align="center"> Current Progress </p>
-<p align="center"><blockquote class="imgur-embed-pub" lang="en" data-id="ZYKKUlu"><a href="https://imgur.com/ZYKKUlu">View post on imgur.com</a></blockquote></p>
+<p align="center"><blockquote class="imgur-embed-pub" lang="en"><a href="https://imgur.com/a/eH4DZ54">View post on imgur.com</a></blockquote></p>
 
 ## <p align="center"> Timeline </p>
+
+#### May - 19 - 2023
+* Re-Implemented Camera class to be more correc than the way that I was representing cameras before. Once I better understand module scopes the various parts of Reactor will probably be re-implemented an additional time to scope the variables currently in reactor.jai to the CameraManager module. 
+
+Move around with W,A,S,D,Q,E 
 
 #### May - 14 - 2023
 * Fixed issue with projection matrix passed in Uniform Buffer Object to vertex shader for perspective projection. Now we have perspective projection and we can continue on to render multiple objects on the screen at a time. Not sure best way to do this, Uniform Buffer Array maybe?
