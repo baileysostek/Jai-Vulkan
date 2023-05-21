@@ -103,7 +103,9 @@ rotation : float = 0.0;
 
 main :: () {
   // Mesh?
-  first_mesh = load_mesh();
+  mesh_loaded, the_mesh := load_mesh("./res/models/dragon.obj");
+  first_mesh = the_mesh;
+
   get_binding_description();
   get_attribute_descriptions();
 
@@ -1466,10 +1468,10 @@ update_uniform_buffer :: ( delta : float64, current_image : u32 ) {
   rotation = xx fmod_cycling(rotation + delta, 2.0 * PI);
 
   translation := transpose(.{
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 5,
-    0, 0, 0, 1
+    0.1, 0, 0, 0,
+    0, 0.1, 0, 0,
+    0, 0, 0.1, 5,
+    0, 0, 0, 1.0
   });
 
   test := Quaternion.{0, 1, 0, ((sin(rotation) + 1.0) / 2.0) * 10.0};

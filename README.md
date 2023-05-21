@@ -1,18 +1,22 @@
-<!-- <p align="center"><img src="https://github.com/baileysostek/Jai-Vulkan/blob/main/github/cadmium_games.png" alt="Cadmium Games" width="512"/></p> -->
+<!-- <p align="center"><img src="https://i.imgur.com/ZyaMQJq_d.webp?maxwidth=760&fidelity=grand" alt="Cadmium Games" width="512"/></p> -->
 
 # <p align="center"> Jai-Vulkan </p>
 Hello! I was graciously added to the Jai-Beta and I fully intend to switch over the development of my Game, Guac-A-Mole to use Jai instead of Java. 
 
-I am using this repository as a public documentation of my experience learning Vulkan and also the inner-workings of Jai on a more serious project than my first project which was a minesweeper clone called Jai-Mines. 
+I am using this repository as a public documentation of my experience learning Vulkan and also the inner-workings of Jai on a more serious project than my first project which was a minesweeper clone called <a href="https://github.com/baileysostek/Jai-Mines">Jai-Mines</a>. 
 
 I have primarily been using the resource https://vulkan-tutorial.com/ to research and learn the Vulkan Graphics API and am currently up to the "Uniform Buffers" section. I intend for this resource to grow as a standalone Jai-Module which will be used as the base for all of my future games, which I intend to develop in Jai.
 
 This project will slowly grow and develop over time to replace my Java-based game engine, Reactor. 
 
 
-## Todo
+## <p align="center"> TODO </p>
+
+In a rough order of importance I have listed some things that I would like to add into this repository to help facilitate my game development goals. Currently I have been working on the Camera System. I would like to have a First Person Perspective Camera tied to the WASD keys and mouse to allow a camera to be "piloted" around the world. 
+
+Some other things that are important todo are as follows: <br>
 [] SSBO implementation to hold position data for our entities. 
-[] ModelLoader file to cache models loaded by the project with #run directives to bake assets into the executable to reduce the need to load from disk at startup.
+[X] ModelLoader file to cache models loaded by the project with #run directives to bake assets into the executable to reduce the need to load from disk at startup.
 [] Create Mesh loaded to load complex models
 [] Create ShaderManager which can automatically reload or hot-swap shaders during development
 [] ImGUI + Immediate Mode Graphics layers.
@@ -28,6 +32,7 @@ LOTS more TODO, I intend for this repository to have feature parody with my Java
 ## <p align="center"> Timeline </p>
 
 #### May - 20 - 2023
+* Implemented Mesh Loader for OBJ files. It is pretty primitive right now but thats okay, always room for improvement.
 * Changed Camera rotation to be correct for First Person Perspective with Y,X,Z rotation ordering.
 * Refactored Keyboard class and Camera class to hold references to the keyboard state and active camera respectively. Now this information does not need to be passed around from the core reactor.jai file to the rest of the project.  
 
